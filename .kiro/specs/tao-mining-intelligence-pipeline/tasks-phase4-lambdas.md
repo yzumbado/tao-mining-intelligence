@@ -1,6 +1,6 @@
 # Phase 4: Lambda Handlers
 
-## Status: Not Started
+## Status: 🔄 Collector Lambda implemented, Processor and Finalizer next
 
 ## Approach
 

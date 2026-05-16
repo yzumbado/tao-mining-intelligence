@@ -9,9 +9,9 @@ The plan is split into focused task files by phase for manageability:
 | Phase | File | Focus | Status |
 |-------|------|-------|--------|
 | 1 | `tasks-phase1-validation.md` | SDK validation, project scaffolding | ✅ Complete |
-| 2 | `tasks-phase2-core.md` | State Manager, Storage, Instrumentation | 🔄 In Progress |
-| 3 | `tasks-phase3-metrics.md` | Metrics Engine (TDD: test first, then implement) | Not Started |
-| 4 | `tasks-phase4-lambdas.md` | Collector, Processor, Finalizer Lambdas | Not Started |
+| 2 | `tasks-phase2-core.md` | State Manager, Storage, Instrumentation | ✅ Complete |
+| 3 | `tasks-phase3-metrics.md` | Metrics Engine (TDD: test first, then implement) | ✅ Complete |
+| 4 | `tasks-phase4-lambdas.md` | Collector, Processor, Finalizer Lambdas | 🔄 Collector done, Processor/Finalizer next |
 | 5 | `tasks-phase5-site.md` | Static site, CDK infrastructure, deployment | Not Started |
 
 ## Execution Approach
