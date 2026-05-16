@@ -79,7 +79,6 @@ class TestSchemaComplianceProperties:
             alpha_stake=0.0,
             total_stake=stake,
             block_at_registration=1000000,
-            blocks_since_last_step=50,
         )
         assert neuron.stake <= 21_000_000
         assert 0.0 <= neuron.incentive <= 1.0
@@ -143,7 +142,7 @@ class TestSchemaComplianceProperties:
             uid=0, hotkey="5F", coldkey="5C", stake=0.0, incentive=0.0,
             emission=0.0, consensus=0.0, validator_trust=0.0, dividends=0.0,
             active=True, alpha_stake=0.0, total_stake=0.0,
-            block_at_registration=block, blocks_since_last_step=0,
+            block_at_registration=block,
         )
         assert isinstance(neuron.block_at_registration, int)
         assert neuron.block_at_registration >= 0

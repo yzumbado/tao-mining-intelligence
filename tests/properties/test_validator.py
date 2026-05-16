@@ -35,7 +35,6 @@ def make_neuron(uid: int, stake: float, emission: float, dividends: float) -> Ne
         alpha_stake=0.0,
         total_stake=stake,
         block_at_registration=1000000,
-        blocks_since_last_step=50,
     )
 
 

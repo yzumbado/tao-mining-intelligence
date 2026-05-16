@@ -77,7 +77,7 @@ class Neuron(BaseModel):
     Field mapping from Bittensor SDK v10.3.2:
     - S → stake (TAO)
     - I → incentive [0,1]
-    - E → emission (TAO per tempo)
+    - E → emission (alpha tokens per tempo)
     - C → consensus [0,1]
     - Tv → validator_trust [0,1]
     - D → dividends [0,1]
@@ -87,6 +87,9 @@ class Neuron(BaseModel):
     NOTE: R (rank) and T (trust) were removed in SDK v10. 
     Rank can be derived from incentive ordering.
     Trust is no longer directly available.
+    
+    NOTE: blocks_since_last_step is a SUBNET-LEVEL scalar in SDK v10,
+    NOT per-neuron. It's stored in the snapshot metadata, not per neuron.
     """
 
     uid: int = Field(ge=0, le=255)
@@ -94,7 +97,7 @@ class Neuron(BaseModel):
     coldkey: str
     stake: float = Field(ge=0.0, description="Stake in TAO (from S field)")
     incentive: float = Field(ge=0.0, le=1.0, description="Incentive share [0,1] (from I field)")
-    emission: float = Field(ge=0.0, description="Emission in TAO per tempo (from E field)")
+    emission: float = Field(ge=0.0, description="Emission in alpha tokens per tempo (from E field)")
     consensus: float = Field(ge=0.0, le=1.0, description="Consensus score [0,1] (from C field)")
     validator_trust: float = Field(ge=0.0, le=1.0, description="Validator trust [0,1] (from Tv field)")
     dividends: float = Field(ge=0.0, le=1.0, description="Dividends share [0,1] (from D field)")
@@ -102,7 +105,6 @@ class Neuron(BaseModel):
     alpha_stake: float = Field(default=0.0, ge=0.0, description="Alpha token stake (from AS field)")
     total_stake: float = Field(default=0.0, ge=0.0, description="Total stake TAO+alpha (from TS field)")
     block_at_registration: int = Field(ge=0)
-    blocks_since_last_step: int = Field(ge=0)
 
     @property
     def is_validator(self) -> bool:
@@ -117,6 +119,10 @@ class MetagraphData(BaseModel):
     total_neurons: int = Field(ge=0)
     active_miners: int = Field(ge=0)
     active_validators: int = Field(ge=0)
+    blocks_since_last_step: int = Field(
+        default=0, ge=0,
+        description="Subnet-level: blocks since last weight-setting step (scalar from SDK)"
+    )
 
     @model_validator(mode="after")
     def validate_neuron_count(self) -> "MetagraphData":

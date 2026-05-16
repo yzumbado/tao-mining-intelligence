@@ -700,10 +700,9 @@ class MetricsEngine:
         top_3_stakes = sum(v.stake for v in validators_by_stake[:3])
         top_3_share = top_3_stakes / total_stake if total_stake > 0 else 0.0
 
-        # Average validator activity (blocks since last step)
-        avg_activity = (
-            sum(v.blocks_since_last_step for v in validators) / len(validators)
-        )
+        # Average validator activity (blocks since last step is subnet-level, not per-neuron)
+        # Use a default value since this metric requires subnet-level data passed separately
+        avg_activity = 0.0  # Will be populated from subnet-level blocks_since_last_step
 
         # Net TAO yield per validator per day
         avg_dividends = sum(v.dividends for v in validators) / len(validators)
