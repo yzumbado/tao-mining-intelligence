@@ -32,7 +32,7 @@ An automated pipeline that collects Bittensor subnet data daily, computes mining
 ## How to Orient Yourself
 
 1. **Start here**: `.kiro/specs/tao-mining-intelligence-pipeline/tasks.md` — master index showing phase status
-2. **Current phase**: `tasks-phase4-lambdas.md` — Collector done, Processor and Finalizer next
+2. **Current phase**: `tasks-phase4-lambdas.md` — Collector done (4.1a-c ✅), Processor next (4.2a)
 3. **Architecture**: `design.md` in the same spec directory — full system design with algorithms
 4. **Requirements**: `requirements.md` — 43 requirements covering all functionality
 5. **Coding standards**: `.kiro/steering/coding-standards.md` — ALWAYS follow these
@@ -91,8 +91,17 @@ lambda/src/
 
 ## What's Next (Phase 4 Continuation)
 
-### Immediate tasks:
-1. **Processor Lambda** (`lambda/src/processor/handler.py`)
+### Immediate tasks (resume here):
+1. **Processor Lambda unit tests** (task 4.2a) — NEXT
+   - Write `tests/unit/test_processor.py`
+   - Test: receives SQS message, reads raw data, computes metrics, stores results
+   - Test: missing previous-day snapshot → trend metrics marked insufficient_data
+   - Test: SNS publish format correct
+   - Test: split profile writes (basic, winner, validator, intelligence, composability)
+   - Test: hotkey tracking (earnings, deregistration detection)
+
+2. **Processor Lambda implementation** (task 4.2b)
+   - `lambda/src/processor/handler.py`
    - Receives SQS message (netuid, date, cycle_id, trace_id)
    - Reads raw snapshot from S3
    - Reads previous day snapshot for trend comparison
@@ -102,16 +111,17 @@ lambda/src/
    - Publishes completion to SNS topic
    - Full instrumentation with trace_id from SQS message
 
-2. **Finalizer Lambda** (`lambda/src/finalizer/handler.py`)
-   - Receives completion messages from SQS (via SNS fan-in)
-   - Checks if all subnets in cycle are COMPLETE
-   - If not all done: exit early
-   - If all done: generate daily briefing, rankings, static site
-   - Mark cycle complete in DynamoDB
+3. **Finalizer Lambda** (tasks 4.3a/b)
+   - Tests then implementation
 
-3. **Unit tests** for both handlers (moto mocks)
+4. **Property tests** (tasks 4.4a/b)
+   - FSM Transition Validity (Property 6)
+   - Subnet Discovery Set Operations (Property 12)
 
-4. **Property tests** for FSM transitions (Property 6) and subnet discovery (Property 12)
+### Completed in this session:
+- ✅ 4.1a: Collector unit tests (16 tests in tests/unit/test_collector.py)
+- ✅ 4.1b: CollectorHandler verified (already implemented, passes all tests)
+- ✅ 4.1c: Full test suite green (118/118 tests passing)
 
 ### After Phase 4:
 - Phase 5: Jinja2 templates, CDK stack, CloudFront, deployment, smoke test
@@ -120,9 +130,9 @@ lambda/src/
 
 ```bash
 source .venv/bin/activate
-.venv/bin/pytest tests/ -v          # All 102 tests
-.venv/bin/pytest tests/properties/  # Property tests only
-.venv/bin/pytest tests/unit/        # Unit tests only
+.venv/bin/pytest tests/ -v          # All 118 tests
+.venv/bin/pytest tests/properties/  # Property tests only (70 tests)
+.venv/bin/pytest tests/unit/        # Unit tests only (48 tests)
 python scripts/test_e2e_local.py    # Live chain test (needs internet)
 python scripts/validate_fields.py   # SDK field validation (needs internet)
 ```
