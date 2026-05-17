@@ -327,6 +327,40 @@ class StateManager:
 
         return thresholds
 
+    def get_refresh_policy(self) -> dict:
+        """Read configurable refresh policy from DynamoDB CONFIG|REFRESH_POLICY.
+
+        Controls per-subnet refresh cadence for the independent scheduling model.
+        Falls back to defaults for any missing keys.
+
+        Returns:
+            Dict with keys: max_staleness_hours, min_refresh_interval_minutes,
+            discovery_cadence_minutes.
+        """
+        defaults = {
+            "max_staleness_hours": 4,
+            "min_refresh_interval_minutes": 15,
+            "discovery_cadence_minutes": 60,
+        }
+
+        try:
+            resp = self._table.get_item(
+                Key={"PK": "CONFIG", "SK": "REFRESH_POLICY"}
+            )
+        except ClientError as e:
+            logger.warning(f"Failed to read refresh policy: {e}. Using defaults.")
+            return defaults
+
+        item = resp.get("Item", {})
+        item = _decimal_to_float(item)
+
+        policy = dict(defaults)
+        for key in defaults:
+            if key in item:
+                policy[key] = item[key]
+
+        return policy
+
     # =========================================================================
     # Hotkey Earnings
     # =========================================================================

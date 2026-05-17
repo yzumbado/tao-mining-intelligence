@@ -82,6 +82,7 @@ def validate_metagraph(
     if miner_incentives:
         incentive_sum = sum(miner_incentives)
         if abs(incentive_sum - 1.0) > 0.01:
+            # Soft warning — data is still usable, just non-standard distribution
             errors.append(
                 f"Miner incentive sum = {incentive_sum:.4f} (expected ~1.0, "
                 f"tolerance 0.01)"
@@ -96,6 +97,7 @@ def validate_metagraph(
     if validator_dividends:
         dividends_sum = sum(validator_dividends)
         if abs(dividends_sum - 1.0) > 0.01:
+            # Soft warning — data is still usable
             errors.append(
                 f"Validator dividends sum = {dividends_sum:.4f} (expected ~1.0, "
                 f"tolerance 0.01)"

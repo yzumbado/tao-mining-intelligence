@@ -126,8 +126,17 @@ async def _collect_metagraph(sub, netuid: int, date: str) -> Optional[dict]:
 
         is_valid, errors = validate_metagraph(snapshot)
         if not is_valid:
-            logger.warning(f"Validation failed for netuid={netuid}: {errors}")
-            return None
+            # Hard reject only for truly corrupt data (NaN/Inf, empty)
+            hard_errors = [e for e in errors if "NaN/Inf" in e or "Empty" in e]
+            if hard_errors:
+                logger.error(f"Corrupt data for netuid={netuid}: {hard_errors}")
+                return None
+            # Soft warnings — data is usable but non-standard
+            logger.warning(f"Validation warnings for netuid={netuid}: {errors}")
+            snapshot["metadata"]["data_quality"] = "degraded"
+            snapshot["metadata"]["quality_warnings"] = errors
+        else:
+            snapshot["metadata"]["data_quality"] = "ok"
 
         path = _storage.get_date_path("raw/metagraph", date, netuid)
         _storage.store_snapshot(path, snapshot)

@@ -291,11 +291,13 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                           emission_trend, roi, reward_model, gini, top_3,
                           taoflow, churn, validator_landscape) -> dict:
     """Build the derived metrics JSON structure for S3 storage."""
+    now = datetime.now(timezone.utc).isoformat()
     return {
         "metadata": {
             "netuid": netuid,
             "source_snapshot_date": date,
-            "computation_timestamp": datetime.now(timezone.utc).isoformat(),
+            "processed_at": now,
+            "computation_timestamp": now,
             "schema_version": "1.0.0",
             "pipeline_version": "1.0.0",
         },
@@ -368,6 +370,7 @@ def _write_split_profiles(netuid: int, neurons, reward_model, gini, top_3,
         "reward_model": reward_model.value,
         "gini_coefficient": gini,
         "top_3_concentration": top_3,
+        "processed_at": now,
         "last_updated": now,
     }))
 

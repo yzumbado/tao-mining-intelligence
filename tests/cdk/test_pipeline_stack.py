@@ -42,8 +42,8 @@ class TestLambdaConfiguration:
         template = _get_template()
         template.has_resource_properties("AWS::Lambda::Function", {
             "FunctionName": "tao-subnet-collector",
-            "Timeout": 60,
-            "MemorySize": 512,
+            "Timeout": 90,
+            "MemorySize": 1024,
         })
 
     def test_subnet_collector_reserved_concurrency(self):

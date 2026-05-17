@@ -97,7 +97,7 @@ class TaoPipelineStack(Stack):
         collection_queue = sqs.Queue(
             self, "CollectionQueue",
             queue_name="tao-collection",
-            visibility_timeout=Duration.seconds(90),
+            visibility_timeout=Duration.seconds(120),
             dead_letter_queue=sqs.DeadLetterQueue(
                 max_receive_count=3,
                 queue=collection_dlq,
@@ -192,8 +192,8 @@ class TaoPipelineStack(Stack):
                 platform=ecr_assets.Platform.LINUX_ARM64,
             ),
             architecture=_lambda.Architecture.ARM_64,
-            memory_size=512,
-            timeout=Duration.seconds(60),
+            memory_size=1024,
+            timeout=Duration.seconds(90),
             reserved_concurrent_executions=2,
             environment={
                 "PIPELINE_ENV": "aws",
