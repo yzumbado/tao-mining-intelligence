@@ -86,6 +86,22 @@ class TaoPipelineStack(Stack):
         # =====================================================================
         # Messaging: SQS + SNS
         # =====================================================================
+        collection_dlq = sqs.Queue(
+            self, "CollectionDLQ",
+            queue_name="tao-collection-dlq",
+            retention_period=Duration.days(14),
+        )
+
+        collection_queue = sqs.Queue(
+            self, "CollectionQueue",
+            queue_name="tao-collection",
+            visibility_timeout=Duration.seconds(90),
+            dead_letter_queue=sqs.DeadLetterQueue(
+                max_receive_count=3,
+                queue=collection_dlq,
+            ),
+        )
+
         process_dlq = sqs.Queue(
             self, "ProcessSubnetDLQ",
             queue_name="tao-process-subnet-dlq",
@@ -143,23 +159,42 @@ class TaoPipelineStack(Stack):
         import os
         lambda_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "lambda")
 
-        collector_fn = _lambda.DockerImageFunction(
-            self, "CollectorLambda",
-            function_name="tao-collector",
+        orchestrator_fn = _lambda.DockerImageFunction(
+            self, "OrchestratorLambda",
+            function_name="tao-orchestrator",
             code=_lambda.DockerImageCode.from_image_asset(
                 directory=lambda_dir,
-                cmd=["src.collector.handler.handle"],
+                cmd=["src.orchestrator.handler.handle"],
+            ),
+            memory_size=256,
+            timeout=Duration.seconds(60),
+            environment={
+                "PIPELINE_ENV": "aws",
+                "TABLE_NAME": table.table_name,
+                "BUCKET_NAME": data_bucket.bucket_name,
+                "COLLECTION_QUEUE_URL": collection_queue.queue_url,
+            },
+            log_group=logs.LogGroup(self, "OrchestratorLogs",
+                                    retention=logs.RetentionDays.ONE_MONTH),
+        )
+
+        subnet_collector_fn = _lambda.DockerImageFunction(
+            self, "SubnetCollectorLambda",
+            function_name="tao-subnet-collector",
+            code=_lambda.DockerImageCode.from_image_asset(
+                directory=lambda_dir,
+                cmd=["src.subnet_collector.handler.handle"],
             ),
             memory_size=512,
-            timeout=Duration.minutes(15),
+            timeout=Duration.seconds(60),
+            reserved_concurrent_executions=2,
             environment={
                 "PIPELINE_ENV": "aws",
                 "TABLE_NAME": table.table_name,
                 "BUCKET_NAME": data_bucket.bucket_name,
                 "PROCESS_QUEUE_URL": process_queue.queue_url,
-                "COINGECKO_API_KEY_PARAM": "/tao-pipeline/coingecko-api-key",
             },
-            log_group=logs.LogGroup(self, "CollectorLogs",
+            log_group=logs.LogGroup(self, "SubnetCollectorLogs",
                                     retention=logs.RetentionDays.ONE_MONTH),
         )
 
@@ -203,6 +238,10 @@ class TaoPipelineStack(Stack):
         # =====================================================================
         # Event Sources: SQS → Lambda
         # =====================================================================
+        subnet_collector_fn.add_event_source(
+            lambda_events.SqsEventSource(collection_queue, batch_size=1)
+        )
+
         processor_fn.add_event_source(
             lambda_events.SqsEventSource(process_queue, batch_size=1)
         )
@@ -218,31 +257,27 @@ class TaoPipelineStack(Stack):
             self, "DailyTrigger",
             rule_name="tao-daily-collection",
             schedule=events.Schedule.cron(minute="0", hour="0"),
-            targets=[targets.LambdaFunction(collector_fn)],
+            targets=[targets.LambdaFunction(orchestrator_fn)],
         )
 
         # =====================================================================
         # IAM: Least Privilege
         # =====================================================================
-        table.grant_read_write_data(collector_fn)
+        table.grant_read_write_data(orchestrator_fn)
+        table.grant_read_write_data(subnet_collector_fn)
         table.grant_read_write_data(processor_fn)
         table.grant_read_write_data(finalizer_fn)
 
-        data_bucket.grant_read_write(collector_fn)
+        data_bucket.grant_read_write(subnet_collector_fn)
         data_bucket.grant_read_write(processor_fn)
         data_bucket.grant_read(finalizer_fn)
         data_bucket.grant_put(finalizer_fn)
 
         site_bucket.grant_put(finalizer_fn)
 
-        process_queue.grant_send_messages(collector_fn)
+        collection_queue.grant_send_messages(orchestrator_fn)
+        process_queue.grant_send_messages(subnet_collector_fn)
         subnet_processed_topic.grant_publish(processor_fn)
-
-        # SSM read for Collector (API keys) — scoped to exact parameter
-        collector_fn.add_to_role_policy(iam.PolicyStatement(
-            actions=["ssm:GetParameter"],
-            resources=[f"arn:aws:ssm:{self.region}:{self.account}:parameter/tao-pipeline/coingecko-api-key"],
-        ))
 
         # =====================================================================
         # CDN: CloudFront

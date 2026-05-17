@@ -30,12 +30,27 @@ def _get_template() -> Template:
 class TestLambdaConfiguration:
     """Assert Lambda functions are configured correctly."""
 
-    def test_collector_timeout_15_minutes(self):
+    def test_orchestrator_timeout_60_seconds(self):
         template = _get_template()
         template.has_resource_properties("AWS::Lambda::Function", {
-            "FunctionName": "tao-collector",
-            "Timeout": 900,
+            "FunctionName": "tao-orchestrator",
+            "Timeout": 60,
+            "MemorySize": 256,
+        })
+
+    def test_subnet_collector_timeout_60_seconds(self):
+        template = _get_template()
+        template.has_resource_properties("AWS::Lambda::Function", {
+            "FunctionName": "tao-subnet-collector",
+            "Timeout": 60,
             "MemorySize": 512,
+        })
+
+    def test_subnet_collector_reserved_concurrency(self):
+        template = _get_template()
+        template.has_resource_properties("AWS::Lambda::Function", {
+            "FunctionName": "tao-subnet-collector",
+            "ReservedConcurrentExecutions": 2,
         })
 
     def test_processor_timeout_15_minutes(self):
