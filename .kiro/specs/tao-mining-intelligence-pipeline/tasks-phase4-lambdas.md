@@ -1,6 +1,6 @@
 # Phase 4: Lambda Handlers
 
-## Status: 🔄 Collector + Processor complete, Finalizer next
+## Status: ✅ Complete — All Lambda handlers implemented and tested (156 tests passing)
 
 ## Approach
 
@@ -61,7 +61,7 @@ Each Lambda handler wires together the core components (StateManager, StorageLay
 
 ### 4.3 Finalizer Lambda
 
-- [~] 4.3a Write unit tests for Finalizer
+- [x] 4.3a Write unit tests for Finalizer
   - tests/unit/test_finalizer.py
   - Test: not all subnets done → early exit
   - Test: all subnets done → generates briefing, rankings, site
@@ -69,7 +69,7 @@ Each Lambda handler wires together the core components (StateManager, StorageLay
   - Test: rankings sorted correctly
   - _Requirements: 5.1, 6.1_
 
-- [~] 4.3b Implement FinalizerHandler
+- [x] 4.3b Implement FinalizerHandler
   - lambda/src/finalizer/handler.py
   - handle() entry point: parse completion message, check if all done
   - check_cycle_complete() via StateManager
@@ -80,23 +80,23 @@ Each Lambda handler wires together the core components (StateManager, StorageLay
   - Full instrumentation
   - _Requirements: 5.1-5.4, 6.1-6.4, 21.1-21.14_
 
-- [~] 4.3c Run tests — all must pass
+- [x] 4.3c Run tests — all must pass
 
 ### 4.4 Pipeline FSM Integration Test
 
-- [~] 4.4a Write property test (Property 6: FSM Transition Validity)
+- [x] 4.4a Write property test (Property 6: FSM Transition Validity)
   - tests/properties/test_fsm.py
   - Generators: random event sequences (trigger, success, failure)
   - Properties: only valid transitions, retry_count increments, ERROR_FATAL after 3, 24h cooldown
   - _Validates: Requirements 7.3-7.7_
 
-- [~] 4.4b Write property test (Property 12: Subnet Discovery Set Operations)
+- [x] 4.4b Write property test (Property 12: Subnet Discovery Set Operations)
   - tests/properties/test_discovery.py
   - Generators: random on-chain and stored subnet ID sets
   - Properties: new subnets added, removed archived, updated list = on-chain list
   - _Validates: Requirements 8.1-8.3_
 
-- [~] 4.4c Run tests — must pass
+- [x] 4.4c Run tests — must pass
 
 ## Checkpoint
 
