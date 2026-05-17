@@ -72,3 +72,42 @@ See these commits in tao-mining-intelligence for examples:
 - `fix(cdk): Set Lambda architecture to ARM64 and add HOME=/tmp`
 - `fix(lambda): Patch bittensor multiprocessing.Queue for Lambda`
 - `fix: Resolve Docker import path mismatch blocking deployment`
+
+## Enforcement Gap (For Coordination Agent)
+
+**Problem observed**: Even after establishing the commit documentation strategy
+as a work mechanic, the very next documentation commit (`docs: Sync all
+documentation...`) was initially written WITHOUT the required structure. It
+took a human review ("does the commit message follow our rules?") to catch it.
+
+**Root cause**: The strategy is documented in steering files, but there's no
+automated enforcement. An agent under time pressure defaults to shorter
+messages unless actively reminded.
+
+**Recommendations for the coordination agent**:
+
+1. **Pre-commit hook concept**: Before any `git commit`, the agent should
+   self-check: "Does this commit message follow the Diagnosis/Root cause/Fix
+   structure?" For simple feature additions, conventional commits suffice.
+   For ANY fix, decision, or refactor — the full structure is mandatory.
+
+2. **Post-milestone audit**: After every major milestone (deployment, arch
+   change, live validation), run a documentation audit. Use a sub-agent to
+   check all docs against current state. This catches drift that accumulates
+   across multiple commits.
+
+3. **Commit review as a gate**: Before marking a task complete, re-read the
+   commit message as if you're a future agent seeing it for the first time.
+   Ask: "Would I understand WHY this was done, WHAT was tried, and WHEN to
+   revisit?" If not, amend before moving on.
+
+4. **Pattern detection**: If an agent produces 3+ commits in a row without
+   the full structure on fix/decision commits, flag it. The strategy only
+   works if it's consistent — one undocumented fix creates a gap in the
+   knowledge chain.
+
+5. **Include in agent initialization**: When a new agent session starts on
+   any coding project, the steering should include: "All fix and decision
+   commits MUST follow the Diagnosis → Root cause → Fix → Verification
+   structure. See kb/commit-documentation-strategy.md."
+
