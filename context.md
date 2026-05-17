@@ -21,11 +21,11 @@ Automated data collection and processing system for Bittensor subnet mining/vali
 Assembly-line FSM model: Collector → Processor → Finalizer → Site Generator. Each Lambda receives an SQS message, does its work, publishes completion to SNS. Idempotent cycles via cycle_id + conditional DynamoDB writes. Circuit breaker + per-operation timeouts for SDK calls.
 
 ## Status
-- **All phases complete** (validation, core infra, metrics engine, Lambda handlers, site + CDK)
-- **Phase 4**: Collector ✅, Processor ✅, Finalizer ✅, FSM + Discovery property tests ✅
-- **Phase 5**: Jinja2 site ✅, CDK stack ✅, E2E integration test ✅, sanity check ✅
-- **Security hardening**: SSM scoped, DLQ on all queues, S3 encryption, NaN/Inf guard, error propagation
-- **Next**: `cdk deploy` to personal AWS account
+- **All phases complete** — ready for deployment
+- **Architecture refactored**: Orchestrator + SubnetCollector (no burst load)
+- **Security hardened**: SSM scoped, DLQ on all queues, S3 encryption, NaN/Inf guard, error propagation
+- **180/180 tests passing** (properties: 79, unit: 76, integration: 2, CDK: 13, site: 9, sanity check)
+- **Next**: Write Orchestrator/SubnetCollector unit tests, then `cdk deploy`
 
 ## Environment (this machine)
 - Python 3.12.13 via Homebrew (`/opt/homebrew/bin/python3.12`)
@@ -74,10 +74,27 @@ When working on this project:
 - Never use Python float in DynamoDB writes — always Decimal
 - After implementation: ask "what are tests hiding?" — run POCs against live chain
 - Error propagation over swallowing — raise on throttling, let SQS retry
+- Review before continuing — check for stale docs, field mismatches, type assumptions
+- Security review before deployment — IAM scope, secrets, encryption, DLQ coverage
+- Challenge constraints — "do we really need Fargate?" led to $0 batch event processing
+- Configurable over hardcoded — frequencies, thresholds, all stored in DynamoDB
+
+## Collaboration Patterns That Work
+- **POC before trusting mocks**: Live chain POCs caught 5 critical bugs that unit tests hid
+- **Sub-agent reviews**: Parallel security + test + doc audits find issues faster than sequential
+- **Implement then review**: Build it, then ask "what did we miss?" — catches more than pre-review
+- **Document decisions immediately**: Architecture decisions written same session they're made
+- **Sync docs at session end**: Every session ends with all docs reflecting current state
+- **Zero tech debt policy**: Fix everything before moving to next phase
+- **Free tier budget tracking**: Calculate Lambda invocations + GB-seconds before committing to a frequency
+
+## Cross-Environment Note
+This project is also worked on in a separate Kiro workspace. Keep `.kiro/` files updated so either workspace can pick up seamlessly.
 
 ## Next Steps
-1. `cdk deploy` — deploy all infrastructure to personal AWS account
-2. Manual trigger: invoke Collector Lambda from console
-3. Monitor first 7 days of daily cycles
-4. Create OPERATIONS.md runbook
-5. Populate subnet classifications for top 10 subnets
+1. Write unit tests for Orchestrator and SubnetCollector (task 4 in active task list)
+2. Update E2E integration test to use new Orchestrator → SubnetCollector flow
+3. `cdk deploy` — deploy all infrastructure to personal AWS account
+4. Manual trigger: invoke Orchestrator Lambda from console
+5. Monitor first 7 days of daily cycles
+6. Phase 2: ChainEventCollector (batch events every 15min), PriceCollector, SocialCollector

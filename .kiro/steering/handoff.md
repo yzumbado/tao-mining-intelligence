@@ -115,6 +115,7 @@ lambda/src/
 ├── validation.py          # Data validation at ingestion (incl. NaN/Inf guard)
 ├── circuit_breaker.py     # Circuit breaker + timeout utilities
 ├── thresholds.py          # Configurable parameters with defaults
+├── sanity_check.py        # Post-processing data quality checks
 ├── models/
 │   ├── enums.py           # All enumerations
 │   └── schemas.py         # All Pydantic v2 data models
@@ -122,11 +123,15 @@ lambda/src/
 │   └── state_manager.py   # DynamoDB FSM + config + hotkey tracking
 ├── storage/
 │   └── storage_layer.py   # S3/local filesystem with compression
+├── orchestrator/
+│   └── handler.py         # ✅ Orchestrator Lambda (discover + dispatch)
+├── subnet_collector/
+│   └── handler.py         # ✅ SubnetCollector Lambda (one subnet per invocation)
+├── collector/
+│   └── handler.py         # ⚠️ Legacy monolithic collector (kept for reference)
 ├── processor/
 │   ├── metrics.py         # ALL algorithms (pure functions, no AWS)
 │   └── handler.py         # ✅ Processor Lambda (metrics + profiles + hotkeys)
-├── collector/
-│   └── handler.py         # ✅ Collector Lambda (async SDK collection)
 ├── finalizer/
 │   └── handler.py         # ✅ Finalizer Lambda (briefing + ranking + site)
 └── site_generator/
@@ -174,11 +179,11 @@ lambda/src/
 # If setting up fresh: /opt/homebrew/bin/python3.12 -m venv .venv
 
 source .venv/bin/activate
-.venv/bin/pytest tests/ -v          # All 178 tests
+.venv/bin/pytest tests/ -v          # All 180 tests
 .venv/bin/pytest tests/properties/  # Property tests only (79 tests)
 .venv/bin/pytest tests/unit/        # Unit tests only (76 tests)
 .venv/bin/pytest tests/integration/ # E2E integration (2 tests)
-.venv/bin/pytest tests/cdk/         # CDK assertions (11 tests)
+.venv/bin/pytest tests/cdk/         # CDK assertions (13 tests)
 python scripts/test_e2e_local.py    # Live chain test (needs internet)
 python scripts/validate_fields.py   # SDK field validation (needs internet)
 ```

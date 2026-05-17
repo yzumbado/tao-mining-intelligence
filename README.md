@@ -27,7 +27,7 @@ source .venv/bin/activate
 # Install dependencies (includes dev tools: pytest, hypothesis, moto)
 pip install -e ".[dev]"
 
-# Run tests (178 passing as of 2026-05-17)
+# Run tests (180 passing as of 2026-05-17)
 pytest tests/ -v
 
 # Validate SDK connectivity (requires internet)
@@ -42,15 +42,27 @@ python scripts/validate_sdk.py
 EventBridge (daily 00:00 UTC)
     │
     ▼
-┌─────────────┐     SQS (per-subnet)     ┌─────────────┐     SNS (completion)     ┌─────────────┐
-│  Collector   │ ──────────────────────▶  │  Processor   │ ──────────────────────▶  │  Finalizer   │
-│  Lambda      │                          │  Lambda      │                          │  Lambda      │
-└─────────────┘                          └─────────────┘                          └─────────────┘
-    │                                        │                                        │
-    ▼                                        ▼                                        ▼
- S3: raw snapshots                     S3: derived metrics                     S3: static site
- DynamoDB: cycle state                 DynamoDB: profiles                      DynamoDB: briefing
-                                                                               CloudFront → user
+┌─────────────┐     SQS (per-subnet)     ┌─────────────────┐     SQS          ┌─────────────┐
+│ Orchestrator │ ──────────────────────▶  │ SubnetCollector  │ ──────────────▶  │  Processor   │
+│ (discover +  │                          │ (1 subnet each,  │                  │  Lambda      │
+│  dispatch)   │                          │  concurrency=2)  │                  │              │
+└─────────────┘                          └─────────────────┘                  └──────┬───────┘
+                                              │                                       │
+                                              ▼                                       ▼
+                                         S3: raw snapshots                     S3: derived metrics
+                                                                               DynamoDB: profiles
+                                                                                      │
+                                                                               SNS (completion)
+                                                                                      │
+                                                                                      ▼
+                                                                              ┌─────────────┐
+                                                                              │  Finalizer   │
+                                                                              │  Lambda      │
+                                                                              └──────┬───────┘
+                                                                                     │
+                                                                                     ▼
+                                                                              S3: site + briefing
+                                                                              CloudFront → user
 ```
 
 - **Compute**: AWS Lambda (Container Image) — Bittensor SDK too large for zip deployment
