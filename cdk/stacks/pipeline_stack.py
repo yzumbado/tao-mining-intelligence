@@ -18,6 +18,7 @@ from aws_cdk import (
     aws_cloudfront as cloudfront,
     aws_cloudfront_origins as origins,
     aws_dynamodb as dynamodb,
+    aws_ecr_assets as ecr_assets,
     aws_events as events,
     aws_events_targets as targets,
     aws_iam as iam,
@@ -166,11 +167,14 @@ class TaoPipelineStack(Stack):
             code=_lambda.DockerImageCode.from_image_asset(
                 directory=lambda_dir,
                 cmd=["src.orchestrator.handler.handle"],
+                platform=ecr_assets.Platform.LINUX_ARM64,
             ),
+            architecture=_lambda.Architecture.ARM_64,
             memory_size=256,
             timeout=Duration.seconds(60),
             environment={
                 "PIPELINE_ENV": "aws",
+                "HOME": "/tmp",
                 "TABLE_NAME": table.table_name,
                 "BUCKET_NAME": data_bucket.bucket_name,
                 "COLLECTION_QUEUE_URL": collection_queue.queue_url,
@@ -185,12 +189,15 @@ class TaoPipelineStack(Stack):
             code=_lambda.DockerImageCode.from_image_asset(
                 directory=lambda_dir,
                 cmd=["src.subnet_collector.handler.handle"],
+                platform=ecr_assets.Platform.LINUX_ARM64,
             ),
+            architecture=_lambda.Architecture.ARM_64,
             memory_size=512,
             timeout=Duration.seconds(60),
             reserved_concurrent_executions=2,
             environment={
                 "PIPELINE_ENV": "aws",
+                "HOME": "/tmp",
                 "TABLE_NAME": table.table_name,
                 "BUCKET_NAME": data_bucket.bucket_name,
                 "PROCESS_QUEUE_URL": process_queue.queue_url,
@@ -205,11 +212,14 @@ class TaoPipelineStack(Stack):
             code=_lambda.DockerImageCode.from_image_asset(
                 directory=lambda_dir,
                 cmd=["src.processor.handler.handle"],
+                platform=ecr_assets.Platform.LINUX_ARM64,
             ),
+            architecture=_lambda.Architecture.ARM_64,
             memory_size=512,
             timeout=Duration.minutes(15),
             environment={
                 "PIPELINE_ENV": "aws",
+                "HOME": "/tmp",
                 "TABLE_NAME": table.table_name,
                 "BUCKET_NAME": data_bucket.bucket_name,
                 "SUBNET_PROCESSED_TOPIC_ARN": subnet_processed_topic.topic_arn,
@@ -224,11 +234,14 @@ class TaoPipelineStack(Stack):
             code=_lambda.DockerImageCode.from_image_asset(
                 directory=lambda_dir,
                 cmd=["src.finalizer.handler.handle"],
+                platform=ecr_assets.Platform.LINUX_ARM64,
             ),
+            architecture=_lambda.Architecture.ARM_64,
             memory_size=512,
             timeout=Duration.minutes(5),
             environment={
                 "PIPELINE_ENV": "aws",
+                "HOME": "/tmp",
                 "TABLE_NAME": table.table_name,
                 "BUCKET_NAME": data_bucket.bucket_name,
             },
