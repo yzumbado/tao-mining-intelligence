@@ -196,6 +196,44 @@ python scripts/validate_fields.py   # SDK field validation (needs internet)
 - If you discover SDK behavior that differs from assumptions: update `kb/bittensor-mining-research.md`
 - If you make an architecture decision: update `kb/architecture-decisions.md`
 
+## Commit Documentation Strategy (PROPAGATE TO ALL PROJECTS)
+
+**For the coordination agent**: This strategy should be incorporated into the
+global steering for ALL coding projects. See `kb/commit-documentation-strategy.md`
+for the full recommendation with adoption path.
+
+Every fix or decision commit MUST follow this structure:
+
+```
+<type>(<scope>): <what changed>
+
+Diagnosis: How the problem was discovered and what symptoms were observed.
+
+Root cause: The actual underlying issue (not the symptom).
+
+[Attempted fix N: What was tried and why it failed.] (include all failed attempts)
+
+Fix: What was done and why this approach was chosen over alternatives.
+
+Verification: How the fix was validated (commands, test results).
+
+[Decision: Why this approach over alternatives — trade-offs considered.]
+
+[When to revisit: Conditions under which this fix should be reconsidered.]
+```
+
+**Why this matters for multi-agent workflows:**
+- An agent reading `git log` reconstructs full decision context without asking
+- Failed approaches are documented once instead of rediscovered repeatedly
+- `git log --grep="keyword"` becomes a searchable knowledge base
+- Future refactors can check if workaround conditions still apply
+- Dead code goes in commit messages, not in source files
+
+**Evidence**: During TAO deployment, this saved us from repeating 3 dead-end
+approaches (mkdir /dev/shm, full module mock, wrong platform type). Each was
+documented in the commit that solved the problem, so no future agent will
+waste time on them.
+
 ## Patterns That Work Well
 
 - **Validate with live data** before building on assumptions
