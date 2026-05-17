@@ -310,7 +310,6 @@ async def _collect_metagraph(netuid: int, cycle_id: str) -> Optional[dict]:
                 "alpha_stake": float(mg.AS[i]),
                 "tao_stake": float(mg.TS[i]),
                 "block_at_registration": int(mg.block_at_registration[i]),
-                "blocks_since_last_step": int(mg.blocks_since_last_step[i]),
             })
 
         snapshot_data = {
@@ -320,6 +319,7 @@ async def _collect_metagraph(netuid: int, cycle_id: str) -> Optional[dict]:
                 "collected_at": datetime.now(timezone.utc).isoformat(),
                 "source_block_number": int(mg.block_at_registration[0]) if mg.n > 0 else 0,
                 "neuron_count": mg.n,
+                "blocks_since_last_step": int(mg.blocks_since_last_step),
             },
             "data": {
                 "neurons": neurons,

@@ -169,7 +169,7 @@ def _make_mock_metagraph(netuid: int, neuron_count: int = 10):
     mg.AS = np.array([50.0 for _ in range(neuron_count)])
     mg.TS = np.array([150.0 for _ in range(neuron_count)])
     mg.block_at_registration = np.array([1000 + i * 100 for i in range(neuron_count)])
-    mg.blocks_since_last_step = np.array([50 for _ in range(neuron_count)])
+    mg.blocks_since_last_step = 50  # Subnet-level scalar (NOT per-neuron)
 
     return mg
 
@@ -665,7 +665,6 @@ def _make_valid_snapshot(netuid: int, cycle_id: str) -> dict:
             "alpha_stake": 50.0,
             "tao_stake": 150.0,
             "block_at_registration": 1000 + i * 100,
-            "blocks_since_last_step": 50,
         })
 
     return {
@@ -675,6 +674,7 @@ def _make_valid_snapshot(netuid: int, cycle_id: str) -> dict:
             "collected_at": datetime.now(timezone.utc).isoformat(),
             "source_block_number": 5000,
             "neuron_count": neuron_count,
+            "blocks_since_last_step": 50,
         },
         "data": {
             "neurons": neurons,

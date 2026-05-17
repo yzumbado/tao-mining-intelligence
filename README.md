@@ -11,27 +11,47 @@ Automated data collection and processing system for Bittensor subnet mining/vali
 | 1. Validation | ✅ Complete | SDK connectivity, DynamoDB, SQS/SNS validated |
 | 2. Core Infrastructure | ✅ Complete | StateManager, StorageLayer, Instrumentation, Validation, Circuit Breaker |
 | 3. Metrics Engine | ✅ Complete | 11 algorithms with 102 passing tests (property + unit) |
-| 4. Lambda Handlers | 🔲 Not Started | Collector, Processor, Finalizer |
+| 4. Lambda Handlers | 🔄 In Progress | Collector ✅, Processor ✅, Finalizer pending |
 | 5. Site & Deployment | 🔲 Not Started | Jinja2 site, CDK, CloudFront |
 
 ## Quick Start
 
 ```bash
-# Create virtual environment
-python3 -m venv .venv
+# Requires Python 3.12+ (system Python 3.9 won't work)
+# Install via Homebrew if needed: brew install python@3.12
+
+# Create virtual environment with Python 3.12
+/opt/homebrew/bin/python3.12 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies
+# Install dependencies (includes dev tools: pytest, hypothesis, moto)
 pip install -e ".[dev]"
 
-# Run tests
+# Run tests (135 passing as of 2026-05-17)
 pytest tests/ -v
 
 # Validate SDK connectivity (requires internet)
 python scripts/validate_sdk.py
 ```
 
+> **Note**: The Bittensor SDK requires Python 3.12+. If `pip install` fails with a Python version error, ensure your venv was created with `python3.12`, not the system default.
+
 ## Architecture
+
+```
+EventBridge (daily 00:00 UTC)
+    │
+    ▼
+┌─────────────┐     SQS (per-subnet)     ┌─────────────┐     SNS (completion)     ┌─────────────┐
+│  Collector   │ ──────────────────────▶  │  Processor   │ ──────────────────────▶  │  Finalizer   │
+│  Lambda      │                          │  Lambda      │                          │  Lambda      │
+└─────────────┘                          └─────────────┘                          └─────────────┘
+    │                                        │                                        │
+    ▼                                        ▼                                        ▼
+ S3: raw snapshots                     S3: derived metrics                     S3: static site
+ DynamoDB: cycle state                 DynamoDB: profiles                      DynamoDB: briefing
+                                                                               CloudFront → user
+```
 
 - **Compute**: AWS Lambda (Container Image) — Bittensor SDK too large for zip deployment
 - **Orchestration**: SQS/SNS (not Step Functions — exceeds free tier)

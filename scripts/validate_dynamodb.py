@@ -2,8 +2,7 @@
 
 Tests that our DynamoDB access patterns work correctly:
 - SUBNET#{netuid}|STATE — pipeline FSM state tracking
-- SUBNET#{netuid}|METRICS#latest — latest derived metrics
-- SUBNET#{netuid}|PROFILE#basic — subnet profile
+- SUBNET#{netuid}|PROFILE#basic|winner|validator|intelligence|composability — split profiles
 - CONFIG|ACTIVE_SUBNETS — monitored subnet list
 - CYCLE|{cycle_id} — cycle-level idempotency
 - RANKING|LATEST — current rankings

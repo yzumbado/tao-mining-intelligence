@@ -220,7 +220,6 @@ For Phase 1, the Bittensor Python SDK with the public Finney endpoint gives us e
 │                                                              │
 │  DynamoDB: tao-pipeline (single-table, PITR enabled)        │
 │  ├── SUBNET#{netuid} / STATE                                │
-│  ├── SUBNET#{netuid} / METRICS#latest                       │
 │  ├── SUBNET#{netuid} / PROFILE#basic|winner|validator|...   │
 │  ├── SUBNET#{netuid} / HYPERPARAMS                          │
 │  ├── CONFIG / ACTIVE_SUBNETS|TRACKED_HOTKEYS|CLOUD_PRICING  │
