@@ -60,6 +60,7 @@ class TaoPipelineStack(Stack):
             self, "DataBucket",
             bucket_name=f"tao-intelligence-{self.account}",
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            encryption=s3.BucketEncryption.S3_MANAGED,
             removal_policy=RemovalPolicy.RETAIN,
             lifecycle_rules=[
                 s3.LifecycleRule(
@@ -106,10 +107,20 @@ class TaoPipelineStack(Stack):
             topic_name="tao-subnet-processed",
         )
 
+        completion_dlq = sqs.Queue(
+            self, "CompletionTrackerDLQ",
+            queue_name="tao-completion-tracker-dlq",
+            retention_period=Duration.days(14),
+        )
+
         completion_queue = sqs.Queue(
             self, "CompletionTrackerQueue",
             queue_name="tao-completion-tracker",
             visibility_timeout=Duration.minutes(5),
+            dead_letter_queue=sqs.DeadLetterQueue(
+                max_receive_count=5,
+                queue=completion_dlq,
+            ),
         )
 
         subnet_processed_topic.add_subscription(
@@ -227,10 +238,10 @@ class TaoPipelineStack(Stack):
         process_queue.grant_send_messages(collector_fn)
         subnet_processed_topic.grant_publish(processor_fn)
 
-        # SSM read for Collector (API keys)
+        # SSM read for Collector (API keys) — scoped to exact parameter
         collector_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["ssm:GetParameter"],
-            resources=[f"arn:aws:ssm:{self.region}:{self.account}:parameter/tao-pipeline/*"],
+            resources=[f"arn:aws:ssm:{self.region}:{self.account}:parameter/tao-pipeline/coingecko-api-key"],
         ))
 
         # =====================================================================

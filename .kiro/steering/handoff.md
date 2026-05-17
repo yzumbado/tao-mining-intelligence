@@ -33,7 +33,7 @@ An automated pipeline that collects Bittensor subnet data daily, computes mining
 
 1. **Start here**: `.kiro/specs/tao-mining-intelligence-pipeline/tasks.md` — master index showing phase status
 2. **Phase task files**: `tasks-phase1-validation.md` through `tasks-phase5-site.md` — granular task tracking per phase (checkboxes: `[x]` done, `[ ]` not started, `[~]` blocked)
-3. **Current phase**: `tasks-phase4-lambdas.md` — Collector done (4.1a-c ✅), Processor done (4.2a-c ✅), Finalizer next (4.3a)
+3. **Current phase**: All phases complete. See `tasks.md` for status summary.
 4. **Architecture**: `design.md` in the same spec directory — full system design with algorithms
 5. **Requirements**: `requirements.md` — 43 requirements covering all functionality
 6. **Coding standards**: `.kiro/steering/coding-standards.md` — ALWAYS follow these
@@ -128,43 +128,44 @@ lambda/src/
 ├── collector/
 │   └── handler.py         # ✅ Collector Lambda (async SDK collection)
 ├── finalizer/
-│   └── handler.py         # [NOT YET BUILT] Finalizer Lambda
+│   └── handler.py         # ✅ Finalizer Lambda (briefing + ranking + site)
 └── site_generator/
-    └── generator.py       # [NOT YET BUILT] Jinja2 HTML generation
+    └── generator.py       # ✅ Jinja2 HTML generation
 ```
 
-## What's Next (Phase 4 Continuation)
+## What's Next (Post-Development)
 
-### Immediate tasks (resume here):
-1. **Finalizer Lambda unit tests** (task 4.3a) — NEXT
-   - Write `tests/unit/test_finalizer.py`
-   - Test: not all subnets done → early exit
-   - Test: all subnets done → generates briefing, rankings, site
-   - Test: briefing content matches expected for known input
-   - Test: rankings sorted correctly
+### All phases complete. Deployment steps:
+1. `cdk deploy` — deploy all infrastructure to AWS
+2. Docker image builds automatically via CDK's `DockerImageCode.from_image_asset`
+3. Manual trigger: invoke Collector Lambda from console
+4. Watch pipeline flow: Collector → SQS → Processor → SNS → Finalizer
+5. Check CloudFront URL for generated site
 
-2. **Finalizer Lambda implementation** (task 4.3b)
-   - `lambda/src/finalizer/handler.py`
-   - Receives SNS→SQS completion message
-   - Checks cycle completeness via StateManager
-   - Generates daily briefing + rankings
-   - Generates static HTML site (Jinja2 + Tailwind)
-   - Uploads site to CloudFront S3 bucket
-   - Marks cycle complete in DynamoDB
-
-3. **Property tests** (tasks 4.4a/b)
-   - FSM Transition Validity (Property 6)
-   - Subnet Discovery Set Operations (Property 12)
+### Post-deployment monitoring:
+- Monitor first 7 days of daily cycles
+- Verify data accumulation in S3
+- Validate ROI estimates against manual calculations
+- Populate subnet classifications for top 10 subnets (manual)
+- Add your own hotkeys to tracked_hotkeys config
+- Create OPERATIONS.md runbook
 
 ### Completed:
-- ✅ 4.1a-c: Collector Lambda (16 unit tests)
-- ✅ 4.2a-c: Processor Lambda (17 unit tests, 135 total passing)
-  - Architecture decisions documented (Decisions 11-14)
-  - design.md and requirements.md updated (removed METRICS#latest, added GSI evolution path)
-  - Tech debt cleared: field name alignment, NaN/Inf guard, error propagation, trace context safety
+- ✅ Phase 1: SDK validation (connectivity, DynamoDB, SQS/SNS)
+- ✅ Phase 2: Core infrastructure (StateManager, StorageLayer, Instrumentation, Validation, Circuit Breaker)
+- ✅ Phase 3: Metrics Engine (11 algorithms, property + unit tests)
+- ✅ Phase 4: Lambda Handlers (Collector 16 tests, Processor 17 tests, Finalizer 12 tests, FSM + Discovery property tests)
+- ✅ Phase 5: Site & Deployment (Jinja2 site 9 tests, CDK 11 tests, E2E integration 2 tests, sanity check)
+- ✅ Security hardening: SSM scoped ARN, DLQ on all queues, S3 encryption, NaN/Inf validation, error propagation
+- ✅ Tech debt: zero known issues
 
-### After Phase 4:
-- Phase 5: Jinja2 templates, CDK stack, CloudFront, deployment, smoke test
+### Descoped (Phase 2+):
+- `subnet.html` and `health.html` templates (4 templates shipped, 2 deferred)
+- Docker Compose local dev environment
+- Smoke test script (E2E integration test covers this with moto)
+- JSON Schema files in config/schemas/ (outputs are validated by Pydantic models instead)
+- LLM-powered Subnet Researcher
+- OPERATIONS.md runbook
 
 ## How to Run Tests
 
@@ -173,9 +174,11 @@ lambda/src/
 # If setting up fresh: /opt/homebrew/bin/python3.12 -m venv .venv
 
 source .venv/bin/activate
-.venv/bin/pytest tests/ -v          # All 135 tests
-.venv/bin/pytest tests/properties/  # Property tests only (70 tests)
-.venv/bin/pytest tests/unit/        # Unit tests only (65 tests)
+.venv/bin/pytest tests/ -v          # All 178 tests
+.venv/bin/pytest tests/properties/  # Property tests only (79 tests)
+.venv/bin/pytest tests/unit/        # Unit tests only (76 tests)
+.venv/bin/pytest tests/integration/ # E2E integration (2 tests)
+.venv/bin/pytest tests/cdk/         # CDK assertions (11 tests)
 python scripts/test_e2e_local.py    # Live chain test (needs internet)
 python scripts/validate_fields.py   # SDK field validation (needs internet)
 ```

@@ -21,20 +21,17 @@ Automated data collection and processing system for Bittensor subnet mining/vali
 Assembly-line FSM model: Collector → Processor → Finalizer → Site Generator. Each Lambda receives an SQS message, does its work, publishes completion to SNS. Idempotent cycles via cycle_id + conditional DynamoDB writes. Circuit breaker + per-operation timeouts for SDK calls.
 
 ## Status
-- **Phases 1-3**: Complete (validation, core infra, metrics engine — 11 algorithms, 102 property+unit tests)
-- **Phase 4** (Lambda handlers): In progress
-  - ✅ 4.1a-c: Collector Lambda done (16 unit tests)
-  - ✅ 4.2a-c: Processor Lambda done (17 unit tests)
-  - 🔲 4.3a: Finalizer Lambda unit tests — **NEXT**
-  - 🔲 4.3b: Finalizer Lambda implementation
-  - 🔲 4.4a-b: Property tests (FSM transitions, subnet discovery)
-- **Phase 5**: Not started (Jinja2 site, CDK, CloudFront, deployment)
+- **All phases complete** (validation, core infra, metrics engine, Lambda handlers, site + CDK)
+- **Phase 4**: Collector ✅, Processor ✅, Finalizer ✅, FSM + Discovery property tests ✅
+- **Phase 5**: Jinja2 site ✅, CDK stack ✅, E2E integration test ✅, sanity check ✅
+- **Security hardening**: SSM scoped, DLQ on all queues, S3 encryption, NaN/Inf guard, error propagation
+- **Next**: `cdk deploy` to personal AWS account
 
 ## Environment (this machine)
 - Python 3.12.13 via Homebrew (`/opt/homebrew/bin/python3.12`)
 - Virtual env: `projects/tao-mining-intelligence/.venv/`
 - All deps installed (bittensor 10.3.2, boto3, hypothesis, pytest, moto)
-- Test suite: 135/135 passing as of 2026-05-17
+- Test suite: 178/178 passing as of 2026-05-17
 - Run tests: `.venv/bin/pytest tests/ -v`
 
 ## Repo
@@ -43,13 +40,17 @@ Assembly-line FSM model: Collector → Processor → Finalizer → Site Generato
 - Branch: main
 
 ## Key Files
-- Spec/tasks: `.kiro/specs/tao-mining-intelligence-pipeline/` (requirements.md, design.md, tasks.md + phase-specific task files)
-- Handoff: `.kiro/steering/handoff.md` — full orientation for any agent picking this up
+- Spec/tasks: `.kiro/specs/tao-mining-intelligence-pipeline/`
+- Handoff: `.kiro/steering/handoff.md`
 - Coding standards: `.kiro/steering/coding-standards.md`
-- Knowledge base: `kb/` — research, architecture decisions, infra assessment
-- Metrics engine: `lambda/src/processor/metrics.py` (pure functions, all algorithms)
-- Collector: `lambda/src/collector/handler.py` (done)
-- Processor handler: `lambda/src/processor/handler.py` (done)
+- Knowledge base: `kb/` — research, architecture decisions
+- Metrics engine: `lambda/src/processor/metrics.py`
+- Collector: `lambda/src/collector/handler.py`
+- Processor: `lambda/src/processor/handler.py`
+- Finalizer: `lambda/src/finalizer/handler.py`
+- Site generator: `lambda/src/site_generator/generator.py`
+- CDK stack: `cdk/stacks/pipeline_stack.py`
+- E2E test: `tests/integration/test_pipeline_e2e.py`
 
 ## SDK Gotchas (important for implementation)
 - `blocks_since_last_step` is subnet-level scalar, NOT per-neuron
@@ -75,7 +76,8 @@ When working on this project:
 - Error propagation over swallowing — raise on throttling, let SQS retry
 
 ## Next Steps
-1. Begin task 4.3a: Finalizer Lambda unit tests
-2. After tests pass, implement Finalizer Lambda (4.3b)
-3. Remaining property tests (4.4a-b)
-4. Phase 5: site generation + CDK deployment
+1. `cdk deploy` — deploy all infrastructure to personal AWS account
+2. Manual trigger: invoke Collector Lambda from console
+3. Monitor first 7 days of daily cycles
+4. Create OPERATIONS.md runbook
+5. Populate subnet classifications for top 10 subnets
