@@ -293,6 +293,36 @@ class TaoPipelineStack(Stack):
         process_queue.grant_send_messages(subnet_collector_fn)
         subnet_processed_topic.grant_publish(processor_fn)
 
+        # EventBridge Scheduler: role for invoking SubnetCollector
+        scheduler_role = iam.Role(
+            self, "SchedulerExecutionRole",
+            role_name="tao-scheduler-execution",
+            assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
+            inline_policies={
+                "InvokeCollector": iam.PolicyDocument(statements=[
+                    iam.PolicyStatement(
+                        actions=["lambda:InvokeFunction"],
+                        resources=[subnet_collector_fn.function_arn],
+                    )
+                ])
+            },
+        )
+
+        # Processor needs to create/delete schedules
+        processor_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["scheduler:CreateSchedule", "scheduler:DeleteSchedule",
+                     "scheduler:GetSchedule"],
+            resources=[f"arn:aws:scheduler:{self.region}:{self.account}:schedule/default/tao-subnet-*"],
+        ))
+        processor_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["iam:PassRole"],
+            resources=[scheduler_role.role_arn],
+        ))
+
+        # Add env vars for self-scheduling
+        processor_fn.add_environment("SUBNET_COLLECTOR_ARN", subnet_collector_fn.function_arn)
+        processor_fn.add_environment("SCHEDULER_ROLE_ARN", scheduler_role.role_arn)
+
         # =====================================================================
         # Monitoring: DLQ Alarms
         # =====================================================================
