@@ -262,37 +262,36 @@ def lambda_context():
 
 
 class TestEarlyExit:
-    """Test that Finalizer exits early when cycle is not complete."""
+    """Test that Aggregator processes regardless of cycle state (AD18: no gate)."""
 
     @mock_aws
-    def test_incomplete_cycle_returns_early(self, aws_env, lambda_context):
-        """If subnets_complete < subnets_total, return without generating outputs."""
+    def test_processes_without_cycle_record(self, aws_env, lambda_context):
+        """Aggregator generates output even without a cycle record (direct invoke)."""
         table = _create_dynamodb_table()
         _create_s3_bucket()
-        _seed_cycle_incomplete(table, subnets_complete=2, subnets_total=5)
+        # No cycle record seeded — Aggregator should still work
+        table.put_item(Item={"PK": "CONFIG", "SK": "ACTIVE_SUBNETS",
+                             "netuids": [1, 4], "last_updated": "2026-05-15T00:00:00+00:00"})
 
         from src.finalizer.handler import handle
 
         result = handle(_make_completion_sqs_event(), lambda_context)
 
-        assert result["status"] == "waiting"
-        assert result["cycle_id"] == "2026-05-15"
+        assert result["status"] == "complete"
 
     @mock_aws
-    def test_incomplete_cycle_does_not_write_to_s3(self, aws_env, lambda_context):
-        """No rankings or briefings written when cycle is incomplete."""
+    def test_direct_invoke_without_sqs_envelope(self, aws_env, lambda_context):
+        """Aggregator accepts direct invoke with {date} payload."""
         table = _create_dynamodb_table()
         _create_s3_bucket()
-        _seed_cycle_incomplete(table)
+        table.put_item(Item={"PK": "CONFIG", "SK": "ACTIVE_SUBNETS",
+                             "netuids": [1], "last_updated": "2026-05-15T00:00:00+00:00"})
 
         from src.finalizer.handler import handle
 
-        handle(_make_completion_sqs_event(), lambda_context)
+        result = handle({"date": "2026-05-15"}, lambda_context)
 
-        s3 = boto3.client("s3", region_name="us-east-1")
-        resp = s3.list_objects_v2(
-            Bucket="tao-intelligence-test", Prefix="derived/rankings/")
-        assert resp.get("KeyCount", 0) == 0
+        assert result["status"] == "complete"
 
 
 # ---------------------------------------------------------------------------

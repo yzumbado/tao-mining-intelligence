@@ -45,35 +45,32 @@ def _init_clients() -> None:
 
 
 def handle(event: dict, context: Any) -> dict:
-    """Lambda entry point. Checks cycle completeness and generates aggregate outputs."""
+    """Lambda entry point. Recomputes rankings and briefing from current profiles."""
     _init_clients()
     set_trace_id("", "")
 
-    # Parse SQS message (SNS envelope)
+    # Parse event — accepts SQS (legacy), direct invoke, or any trigger
     try:
-        record = event["Records"][0]
-        body = json.loads(record["body"])
-        # SNS→SQS wraps the message in {"Message": "..."}
-        message = json.loads(body["Message"])
-        cycle_id = message["cycle_id"]
-        date = message["date"]
-        trace_id = message.get("trace_id", "")
+        if "Records" in event:
+            record = event["Records"][0]
+            body = json.loads(record["body"])
+            message = json.loads(body.get("Message", body)) if isinstance(body, dict) else json.loads(body)
+            date = message.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+            cycle_id = message.get("cycle_id", date)
+            trace_id = message.get("trace_id", "")
+        else:
+            date = event.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+            cycle_id = event.get("cycle_id", date)
+            trace_id = event.get("trace_id", f"aggregator-{date}")
     except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
-        logger.error(f"Failed to parse SQS message: {e}")
-        return {"status": "error", "error": f"malformed message: {e}"}
+        logger.error(f"Failed to parse event: {e}")
+        return {"status": "error", "error": f"malformed event: {e}"}
 
     set_trace_id(trace_id, cycle_id)
 
     with instrument("finalizer", "handle", cycle_id=cycle_id) as ctx:
-        # Check if cycle is complete
-        if not _state_manager.check_cycle_complete(cycle_id):
-            ctx["action"] = "waiting"
-            return {"status": "waiting", "cycle_id": cycle_id}
-
-        # Get active subnets
+        # Read all derived metrics from S3 (whatever exists for today)
         active_subnets = _state_manager.get_active_subnets()
-
-        # Read all derived metrics from S3
         all_metrics = _read_all_derived_metrics(date, active_subnets)
 
         # Generate rankings
@@ -109,8 +106,11 @@ def handle(event: dict, context: Any) -> dict:
             "last_updated": datetime.now(timezone.utc).isoformat(),
         }))
 
-        # Mark cycle complete
-        _state_manager.mark_cycle_complete(cycle_id)
+        # Mark cycle complete (best-effort, for observability only)
+        try:
+            _state_manager.mark_cycle_complete(cycle_id)
+        except Exception:
+            pass  # Not critical in independent refresh model
 
         ctx["rankings_count"] = len(rankings)
         ctx["alerts_count"] = len(briefing.get("alerts", []))
