@@ -18,14 +18,14 @@ from __future__ import annotations
 
 from typing import Optional
 
-from models.enums import (
+from src.models.enums import (
     CompetitionTrend,
     Confidence,
     HoldVsSwap,
     RewardModel,
     TaoflowStatus,
 )
-from models.schemas import (
+from src.models.schemas import (
     ChurnMetrics,
     DeregistrationRisk,
     EmissionTrend,

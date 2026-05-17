@@ -208,3 +208,30 @@ python scripts/validate_fields.py   # SDK field validation (needs internet)
 - **Review after implementation** — found 7 critical bugs in the "working" code by asking "what are tests hiding?"
 - **Field name alignment matters** — Collector output field names must match Processor input expectations exactly
 - **Error propagation over swallowing** — StateManager now raises on throttling so SQS retries work
+
+## Known Deployment Blocker (MUST FIX BEFORE `cdk deploy`)
+
+**Docker import path mismatch** — the pipeline will NOT work in Lambda as-is:
+
+- Dockerfile: `COPY src/ ${LAMBDA_TASK_ROOT}/` → files land at `/var/task/orchestrator/handler.py`
+- CDK: `cmd=["src.orchestrator.handler.handle"]` → expects `/var/task/src/orchestrator/handler.py`
+- Source code: `from src.config import ...` → requires `src` package prefix on Python path
+
+**Why tests didn't catch it**: Tests add both `lambda/` and `lambda/src/` to sys.path, so both `from src.X` and `from X` resolve. In the container, only one path exists.
+
+**Fix**: Change Dockerfile to `COPY src/ ${LAMBDA_TASK_ROOT}/src/` (preserving the `src` prefix). This is the minimal fix — keeps all imports and CDK CMD values unchanged.
+
+**Verification**: After fixing, run:
+```bash
+docker build -t test-imports lambda/ && \
+docker run --rm test-imports python -c "from src.processor.handler import handle; print('OK')"
+```
+
+## Lessons Learned (Testing Process)
+
+1. **180 passing tests can still hide a deployment-blocking bug** — if the test environment's module resolution differs from production, tests are lying
+2. **Scripts are code too** — if it's meant to be run, it must be tested that it runs (import smoke test)
+3. **sys.path hacks in every file = fragility** — centralize path setup in conftest.py
+4. **Docker build is the real test** — unit tests validate logic, but only a container build validates packaging
+5. **The E2E test doesn't test the full chain** — it seeds data manually instead of calling the real Orchestrator/Collector, so it misses SQS message format drift
+6. **"All tests pass" ≠ "ready to deploy"** — we changed 5 source files (imports) and all 180 tests still passed without modification, proving they never exercised those paths. Always run `docker run --entrypoint python test-imports -c "from src.X.handler import handle"` after any import or Dockerfile change — it's the only test that can't lie about module resolution.

@@ -5,7 +5,7 @@ the src/ directory, so imports use the package name directly (e.g., models.schem
 For local development, add lambda/src/ to sys.path.
 """
 
-from models.enums import (
+from src.models.enums import (
     Confidence,
     CompetitionTrend,
     EntryBarrierLevel,
@@ -17,7 +17,7 @@ from models.enums import (
     SubnetCategory,
     TaoflowStatus,
 )
-from models.schemas import (
+from src.models.schemas import (
     AlphaPrice,
     AlphaPriceRecord,
     BriefingAlert,

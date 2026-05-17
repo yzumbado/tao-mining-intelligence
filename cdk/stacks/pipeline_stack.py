@@ -14,6 +14,7 @@ from aws_cdk import (
     Duration,
     RemovalPolicy,
     Stack,
+    aws_cloudwatch as cloudwatch,
     aws_cloudfront as cloudfront,
     aws_cloudfront_origins as origins,
     aws_dynamodb as dynamodb,
@@ -278,6 +279,24 @@ class TaoPipelineStack(Stack):
         collection_queue.grant_send_messages(orchestrator_fn)
         process_queue.grant_send_messages(subnet_collector_fn)
         subnet_processed_topic.grant_publish(processor_fn)
+
+        # =====================================================================
+        # Monitoring: DLQ Alarms
+        # =====================================================================
+        for dlq, name in [
+            (collection_dlq, "Collection"),
+            (process_dlq, "Process"),
+            (completion_dlq, "Completion"),
+        ]:
+            cloudwatch.Alarm(
+                self, f"{name}DLQAlarm",
+                alarm_name=f"tao-{name.lower()}-dlq-not-empty",
+                metric=dlq.metric_approximate_number_of_messages_visible(),
+                threshold=1,
+                evaluation_periods=1,
+                comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+                treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+            )
 
         # =====================================================================
         # CDN: CloudFront

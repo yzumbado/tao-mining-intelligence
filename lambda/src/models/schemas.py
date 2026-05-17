@@ -11,7 +11,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from models.enums import (
+from src.models.enums import (
     Confidence,
     CompetitionTrend,
     EntryBarrierLevel,

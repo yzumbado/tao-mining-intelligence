@@ -4,7 +4,10 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lambda", "src"))
+lambda_src = os.path.join(os.path.dirname(__file__), "..", "lambda", "src")
+sys.path.insert(0, lambda_src)
+# Also add parent of lambda/src so "src.config" resolves
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lambda"))
 os.environ["PIPELINE_ENV"] = "local"
 os.environ["LOCAL_OUTPUT_DIR"] = "./output"
 
