@@ -11,8 +11,8 @@ Automated data collection and processing system for Bittensor subnet mining/vali
 | 1. Validation | ✅ Complete | SDK connectivity, DynamoDB, SQS/SNS validated |
 | 2. Core Infrastructure | ✅ Complete | StateManager, StorageLayer, Instrumentation, Validation, Circuit Breaker |
 | 3. Metrics Engine | ✅ Complete | 11 algorithms with 102 passing tests (property + unit) |
-| 4. Lambda Handlers | 🔄 In Progress | Collector ✅, Processor ✅, Finalizer pending |
-| 5. Site & Deployment | 🔲 Not Started | Jinja2 site, CDK, CloudFront |
+| 4. Lambda Handlers | ✅ Complete | Collector ✅, Processor ✅, Finalizer ✅ |
+| 5. Site & Deployment | ✅ Complete | Jinja2 site, CDK, E2E test, sanity check |
 
 ## Quick Start
 
@@ -27,7 +27,7 @@ source .venv/bin/activate
 # Install dependencies (includes dev tools: pytest, hypothesis, moto)
 pip install -e ".[dev]"
 
-# Run tests (135 passing as of 2026-05-17)
+# Run tests (178 passing as of 2026-05-17)
 pytest tests/ -v
 
 # Validate SDK connectivity (requires internet)
