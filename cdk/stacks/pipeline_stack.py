@@ -267,11 +267,67 @@ class TaoPipelineStack(Stack):
         # =====================================================================
         # Scheduling: EventBridge
         # =====================================================================
+        # Scheduling: EventBridge + Scheduler Role
+        # =====================================================================
+        # EventBridge Scheduler: role for invoking SubnetCollector
+        scheduler_role = iam.Role(
+            self, "SchedulerExecutionRole",
+            role_name="tao-scheduler-execution",
+            assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
+            inline_policies={
+                "InvokeCollector": iam.PolicyDocument(statements=[
+                    iam.PolicyStatement(
+                        actions=["lambda:InvokeFunction"],
+                        resources=[subnet_collector_fn.function_arn],
+                    )
+                ])
+            },
+        )
+
         events.Rule(
             self, "DailyTrigger",
             rule_name="tao-daily-collection",
             schedule=events.Schedule.cron(minute="0", hour="0"),
             targets=[targets.LambdaFunction(orchestrator_fn)],
+        )
+
+        # Discovery Lambda: hourly safety net for independent refresh (AD18)
+        discovery_fn = _lambda.DockerImageFunction(
+            self, "DiscoveryLambda",
+            function_name="tao-discovery",
+            code=_lambda.DockerImageCode.from_image_asset(
+                directory=lambda_dir,
+                cmd=["src.discovery.handler.handle"],
+                platform=ecr_assets.Platform.LINUX_ARM64,
+            ),
+            architecture=_lambda.Architecture.ARM_64,
+            memory_size=256,
+            timeout=Duration.seconds(60),
+            environment={
+                "PIPELINE_ENV": "aws",
+                "HOME": "/tmp",
+                "TABLE_NAME": table.table_name,
+                "SUBNET_COLLECTOR_ARN": subnet_collector_fn.function_arn,
+                "SCHEDULER_ROLE_ARN": scheduler_role.role_arn,
+            },
+            log_group=logs.LogGroup(self, "DiscoveryLogs",
+                                    retention=logs.RetentionDays.ONE_MONTH),
+        )
+        table.grant_read_write_data(discovery_fn)
+        discovery_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["scheduler:CreateSchedule", "scheduler:GetSchedule"],
+            resources=[f"arn:aws:scheduler:{self.region}:{self.account}:schedule/default/tao-subnet-*"],
+        ))
+        discovery_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["iam:PassRole"],
+            resources=[scheduler_role.role_arn],
+        ))
+
+        events.Rule(
+            self, "HourlyDiscovery",
+            rule_name="tao-hourly-discovery",
+            schedule=events.Schedule.rate(Duration.hours(1)),
+            targets=[targets.LambdaFunction(discovery_fn)],
         )
 
         # =====================================================================
@@ -292,21 +348,6 @@ class TaoPipelineStack(Stack):
         collection_queue.grant_send_messages(orchestrator_fn)
         process_queue.grant_send_messages(subnet_collector_fn)
         subnet_processed_topic.grant_publish(processor_fn)
-
-        # EventBridge Scheduler: role for invoking SubnetCollector
-        scheduler_role = iam.Role(
-            self, "SchedulerExecutionRole",
-            role_name="tao-scheduler-execution",
-            assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
-            inline_policies={
-                "InvokeCollector": iam.PolicyDocument(statements=[
-                    iam.PolicyStatement(
-                        actions=["lambda:InvokeFunction"],
-                        resources=[subnet_collector_fn.function_arn],
-                    )
-                ])
-            },
-        )
 
         # Processor needs to create/delete schedules
         processor_fn.add_to_role_policy(iam.PolicyStatement(
