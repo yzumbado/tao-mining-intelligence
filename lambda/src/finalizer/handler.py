@@ -144,6 +144,19 @@ def _read_all_derived_metrics(date: str, netuids: list[int]) -> dict[int, dict]:
 # ---------------------------------------------------------------------------
 
 
+import math
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    """Sanitize a float value — replace NaN/Inf with default."""
+    if value is None:
+        return default
+    f = float(value)
+    if math.isnan(f) or math.isinf(f):
+        return default
+    return f
+
+
 def _generate_rankings(all_metrics: dict[int, dict]) -> list[dict]:
     """Generate subnet rankings sorted by attractiveness score."""
     rankings = []
@@ -153,10 +166,10 @@ def _generate_rankings(all_metrics: dict[int, dict]) -> list[dict]:
         roi = data.get("roi_estimate", {})
         emission = data.get("emission_trend", {})
 
-        net_tao_yield = roi.get("net_tao_yield_per_day", 0.0)
-        days_to_recoup = roi.get("days_to_recoup", float("inf"))
-        competitive_density = data.get("competitive_density", 1.0)
-        emission_change = emission.get("change_percent", 0.0)
+        net_tao_yield = _safe_float(roi.get("net_tao_yield_per_day", 0.0))
+        days_to_recoup = _safe_float(roi.get("days_to_recoup", 0.0), default=9999.0)
+        competitive_density = _safe_float(data.get("competitive_density", 1.0))
+        emission_change = _safe_float(emission.get("change_percent", 0.0))
         taoflow = data.get("taoflow_health", {}).get("status", "HEALTHY")
 
         # Attractiveness score: higher is better
@@ -169,10 +182,10 @@ def _generate_rankings(all_metrics: dict[int, dict]) -> list[dict]:
             "netuid": netuid,
             "net_tao_yield": net_tao_yield,
             "days_to_recoup": days_to_recoup,
-            "thirty_day_projection": roi.get("thirty_day_projected_tao", 0.0),
+            "thirty_day_projection": _safe_float(roi.get("thirty_day_projected_tao", 0.0)),
             "competitive_density": competitive_density,
             "emission_trend": emission_change,
-            "alpha_price": roi.get("alpha_tao_rate", 0.0),
+            "alpha_price": _safe_float(roi.get("alpha_tao_rate", 0.0)),
             "attractiveness_score": score,
         })
 
