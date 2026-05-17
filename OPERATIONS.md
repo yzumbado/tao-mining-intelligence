@@ -90,7 +90,7 @@ aws lambda list-functions --profile tao --region us-east-1 \
 
 # Expected:
 # tao-orchestrator      (60s timeout)
-# tao-subnet-collector  (60s timeout)
+# tao-subnet-collector  (90s timeout, 1024MB)
 # tao-processor         (900s timeout)
 # tao-finalizer         (300s timeout)
 ```
@@ -295,3 +295,7 @@ aws dynamodb put-item --profile tao --region us-east-1 \
 4. **First deploy takes ~4 minutes** (CloudFront distribution creation is slow)
 5. **The account was clean** — if deploying to an account with existing resources, verify no name collisions on S3 buckets (they're globally unique)
 6. **`requests` version must satisfy bittensor SDK** — check `pip install` output during Docker build
+7. **ARM64 architecture required** — Apple Silicon builds ARM64 images; Lambda must be configured with `architecture=ARM_64`
+8. **HOME=/tmp is mandatory** — Bittensor SDK tries to create `~/.bittensor/wallets/` on import; Lambda's default HOME is read-only
+9. **lambda_patch.py must load before bittensor** — patches multiprocessing.Queue (needs /dev/shm which Lambda lacks); loaded via `src/__init__.py` when `PIPELINE_ENV=aws`
+10. **Validation must be relaxed for real-world data** — 27/129 subnets have non-standard incentive distributions; hard rejection blocks the entire pipeline

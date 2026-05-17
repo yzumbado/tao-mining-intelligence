@@ -83,6 +83,9 @@ lambda/src/
 ├── instrumentation.py     # Tracing, structured logging
 ├── validation.py          # Data validation at ingestion
 ├── circuit_breaker.py     # Circuit breaker + timeout utilities
+├── thresholds.py          # Configurable parameters with defaults
+├── sanity_check.py        # Post-processing data quality checks
+├── lambda_patch.py        # Bittensor multiprocessing.Queue patch for Lambda
 ├── models/
 │   ├── enums.py           # All enumerations
 │   └── schemas.py         # All Pydantic data models
@@ -90,11 +93,15 @@ lambda/src/
 │   └── state_manager.py   # DynamoDB FSM + config + hotkey tracking
 ├── storage/
 │   └── storage_layer.py   # S3/local filesystem with compression
+├── orchestrator/
+│   └── handler.py         # Orchestrator Lambda (discover + dispatch)
+├── subnet_collector/
+│   └── handler.py         # SubnetCollector Lambda (one subnet per invocation)
 ├── processor/
 │   ├── metrics.py         # Pure computation (all algorithms)
 │   └── handler.py         # Lambda handler (wires components)
 ├── collector/
-│   └── handler.py         # Lambda handler (SDK + orchestration)
+│   └── handler.py         # Legacy monolithic collector (reference only)
 ├── finalizer/
 │   └── handler.py         # Lambda handler (briefing + ranking + site)
 └── site_generator/

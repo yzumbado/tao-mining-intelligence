@@ -543,3 +543,15 @@ EventBridge (hourly) → Orchestrator → Collection Queue (SQS)
 - Backfillable: set checkpoint to any historical block to reprocess
 - No connection management, no Fargate, no always-on cost
 - Can be tightened to 1-minute latency by changing EventBridge schedule (still $0)
+
+
+## Decision 18: Independent Subnet Refresh over Batch Cycle
+
+> **Status**: Approved (Phase 1 foundation committed 2026-05-17)
+> **Full document**: `kb/architecture-decision-18-independent-refresh.md`
+
+**Context**: First live deployment proved the batch cycle model (daily, all-or-nothing) creates artificial coupling. One subnet failure blocks output for all 128 others.
+
+**Decision**: Replace batch cycle with self-scheduling independent subnet loops using EventBridge Scheduler one-time schedules. Each subnet refreshes at its own tempo cadence, capped at configurable max staleness (default 4 hours). Rankings recomputed after each subnet update.
+
+**Key changes**: Remove Orchestrator from hot path, remove cycle gate in Finalizer, add Discovery Lambda as hourly safety net, add `llms.txt` for agent consumption.

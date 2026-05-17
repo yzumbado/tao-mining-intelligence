@@ -4,7 +4,7 @@ Automated data collection and processing system for Bittensor subnet mining/vali
 
 ## Status
 
-**Version**: 0.1.0 (All phases complete, ready for deployment)
+**Version**: 0.1.0 (Deployed — 129 subnets collected, 128 processed, rankings generated)
 
 | Phase | Status | Description |
 |-------|--------|-------------|

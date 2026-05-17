@@ -116,6 +116,7 @@ lambda/src/
 ├── circuit_breaker.py     # Circuit breaker + timeout utilities
 ├── thresholds.py          # Configurable parameters with defaults
 ├── sanity_check.py        # Post-processing data quality checks
+├── lambda_patch.py        # Bittensor multiprocessing.Queue patch for Lambda
 ├── models/
 │   ├── enums.py           # All enumerations
 │   └── schemas.py         # All Pydantic v2 data models
@@ -140,20 +141,17 @@ lambda/src/
 
 ## What's Next (Post-Development)
 
-### All phases complete. Deployment steps:
-1. `cdk deploy` — deploy all infrastructure to AWS
-2. Docker image builds automatically via CDK's `DockerImageCode.from_image_asset`
-3. Manual trigger: invoke Collector Lambda from console
-4. Watch pipeline flow: Collector → SQS → Processor → SNS → Finalizer
-5. Check CloudFront URL for generated site
+### Deployment: COMPLETE ✅ (2026-05-17)
+- Stack deployed to AWS account 651484323929 (us-east-1)
+- First live run: 129 subnets collected, 128 processed, rankings generated
+- CloudFront URL: `https://dkfh19zkgqq18.cloudfront.net`
+- All resources within free tier ($0/month validated)
 
-### Post-deployment monitoring:
-- Monitor first 7 days of daily cycles
-- Verify data accumulation in S3
-- Validate ROI estimates against manual calculations
-- Populate subnet classifications for top 10 subnets (manual)
-- Add your own hotkeys to tracked_hotkeys config
-- Create OPERATIONS.md runbook
+### Architecture Decision 18: Independent Subnet Refresh (APPROVED)
+- Phase 1 foundation committed (configurable refresh policy, timestamps, relaxed validation)
+- Phase 2 pending: self-scheduling loops via EventBridge Scheduler
+- Phase 3 pending: Discovery Lambda, remove old orchestration, documentation overhaul
+- See `kb/architecture-decision-18-independent-refresh.md` for full design
 
 ### Completed:
 - ✅ Phase 1: SDK validation (connectivity, DynamoDB, SQS/SNS)
@@ -162,6 +160,9 @@ lambda/src/
 - ✅ Phase 4: Lambda Handlers (Collector 16 tests, Processor 17 tests, Finalizer 12 tests, FSM + Discovery property tests)
 - ✅ Phase 5: Site & Deployment (Jinja2 site 9 tests, CDK 11 tests, E2E integration 2 tests, sanity check)
 - ✅ Security hardening: SSM scoped ARN, DLQ on all queues, S3 encryption, NaN/Inf validation, error propagation
+- ✅ Deployment: Docker import fix, ARM64, lambda_patch, DLQ alarms, OPERATIONS.md
+- ✅ First live run: 129/129 collected, 128 processed, rankings generated
+- ✅ AD18 Phase 1: Configurable refresh policy, processed_at timestamps, validation relaxation
 - ✅ Tech debt: zero known issues
 
 ### Descoped (Phase 2+):
@@ -170,7 +171,6 @@ lambda/src/
 - Smoke test script (E2E integration test covers this with moto)
 - JSON Schema files in config/schemas/ (outputs are validated by Pydantic models instead)
 - LLM-powered Subnet Researcher
-- OPERATIONS.md runbook
 
 ## How to Run Tests
 
