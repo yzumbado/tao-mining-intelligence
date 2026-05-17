@@ -2,7 +2,8 @@ FROM public.ecr.aws/lambda/python:3.12
 
 # Install system dependencies for substrate-interface (bittensor dependency)
 RUN dnf install -y gcc python3-devel libffi-devel openssl-devel && \
-    dnf clean all
+    dnf clean all && \
+    mkdir -p /dev/shm
 
 # Install Python dependencies
 COPY requirements.txt .
