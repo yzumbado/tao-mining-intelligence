@@ -428,3 +428,118 @@ The Finalizer only checks cycle-level completion (`subnets_complete >= subnets_t
 - Future: add a "state reconciliation" step at cycle start that resets stale per-subnet states
 
 5. ~~**Cost budget**~~: RESOLVED — $0/month. All services within always-free tier. Container Image Lambda solves SDK size. SQS/SNS/CloudFront/Parameter Store all have generous free tiers.
+
+---
+
+## Decision 15: Configurable Collection Frequencies per Data Area
+
+**Date**: 2026-05-17
+
+**Context**: The pipeline evolved from a single daily batch into a multi-source intelligence platform. Different data sources have different freshness requirements. Chain events (registrations, stake movements) benefit from near-real-time detection. Metagraph snapshots are heavy and daily is sufficient. Social data (YouTube, Discord) is daily.
+
+**Decision**: Each collection area has an independently configurable frequency stored in DynamoDB `CONFIG|COLLECTION_FREQUENCIES`:
+
+```json
+{
+  "metagraph": "60min",
+  "chain_events": "15min",
+  "prices": "4h",
+  "social": "daily",
+  "code": "daily"
+}
+```
+
+Initial deployment frequencies:
+- Chain events: every 15 minutes (configurable down to 1 minute)
+- Metagraph snapshots: every 60 minutes (spread: 1 subnet/min via reserved concurrency)
+- TAO/USD price: every 4 hours
+- Social/code: daily
+
+**Implementation**: Each area has its own EventBridge rule. Changing frequency = updating the EventBridge schedule (via console or config update Lambda). No code changes needed to adjust frequency.
+
+**Rationale**:
+- 15-minute chain events uses ~3% of Lambda free tier (10,800 invocations/month, ~28,000 GB-seconds)
+- Can be tightened to 1 minute (14% requests, 44% compute) without leaving free tier
+- Each area is independent — increasing metagraph frequency doesn't affect chain event budget
+- Configurable via DynamoDB means no redeployment to change frequencies
+
+**Free tier budget at initial frequencies**:
+| Component | Requests/month | GB-seconds/month |
+|-----------|---------------|-----------------|
+| SubnetCollector (128 subnets, hourly) | 92,160 | ~47,000 |
+| ChainEventCollector (every 15min) | 2,880 | ~7,400 |
+| Processor (128 subnets, daily) | 3,840 | ~19,000 |
+| Finalizer (daily) | 30 | ~150 |
+| PriceCollector (every 4h) | 180 | ~90 |
+| SocialCollector (daily) | 30 | ~150 |
+| **Total** | **~99,120** | **~73,790** |
+| **Free tier** | **1,000,000** | **400,000** |
+| **Usage** | **~10%** | **~18%** |
+
+---
+
+## Decision 16: Orchestrator + SubnetCollector Split (Eliminate Burst Load)
+
+**Date**: 2026-05-17
+
+**Context**: The monolithic Collector Lambda blasts 128+ subnets in one 15-minute invocation, creating burst load on the Finney endpoint and risking timeout. Each subnet's data is independent.
+
+**Decision**: Split the Collector into:
+1. **Orchestrator Lambda** (lightweight, <30s): discovers subnets, claims cycle, publishes one SQS message per subnet to a collection queue, collects global data (TAO/USD price)
+2. **SubnetCollector Lambda** (reserved concurrency=2, 60s timeout): collects metagraph + hyperparams + alpha price + reg cost for ONE subnet per invocation
+
+**Data flow**:
+```
+EventBridge (hourly) → Orchestrator → Collection Queue (SQS)
+                                            │
+                                            ▼ (1 message per subnet)
+                                    SubnetCollector (concurrency=2)
+                                            │
+                                            ▼
+                                    Processing Queue → Processor → Finalizer
+```
+
+**Rationale**:
+- Eliminates burst: at concurrency=2, subnets process ~2/min = 64 minutes for 128 subnets
+- Eliminates timeout risk: each invocation <30s (one subnet = 4-5 RPC calls)
+- Eliminates circuit breaker need: SQS retry IS the circuit breaker (3 attempts → DLQ)
+- Eliminates graceful shutdown logic: no time management needed
+- Same monitoring: trace_id propagated via SQS messages, same instrumentation pattern
+- Same cost: more invocations but shorter duration = same GB-seconds
+
+**Implications**:
+- Collector handler.py refactored into orchestrator/handler.py + subnet_collector/handler.py
+- CDK adds: collection queue + DLQ, SubnetCollector Lambda with reserved concurrency
+- Tests refactored to match new split
+- Circuit breaker and concurrency semaphore code can be removed (SQS handles both)
+
+---
+
+## Decision 17: Batch Chain Event Processing (No Fargate, $0)
+
+**Date**: 2026-05-17
+
+**Context**: Chain events (NeuronRegistered, StakeAdded, NetworkAdded, etc.) are valuable for near-real-time alerts. The initial assumption was that monitoring events requires an always-on WebSocket subscription (Fargate, ~$5/month).
+
+**Decision**: Process chain events in batches via Lambda. The chain stores events permanently in blocks. A scheduled Lambda queries historical blocks since the last checkpoint, filters for interesting events, and stores them.
+
+**Implementation**:
+- DynamoDB stores `CONFIG|LAST_EVENT_BLOCK` (checkpoint)
+- EventBridge triggers ChainEventCollector every 15 minutes
+- Lambda queries ~75 blocks (15min × 5 blocks/min), filters events, stores to S3
+- If Lambda fails, next invocation picks up from the same checkpoint (idempotent)
+
+**Events we monitor**:
+- `NeuronRegistered(NetUid, u16, AccountId)` — new miner/validator
+- `StakeAdded/Removed(AccountId, AccountId, TaoBalance, AlphaBalance, NetUid)` — whale movements
+- `NetworkAdded/Removed(NetUid)` — subnet lifecycle
+- `HotkeySwapped(AccountId, AccountId, AccountId)` — wallet migrations
+- `LiquidityAdded/Removed(...)` — AMM pool changes
+- `BurnSet(NetUid, TaoBalance)` — registration cost changes
+
+**Rationale**:
+- $0 (Lambda free tier: 2,880 invocations/month at 15min intervals)
+- 15-minute latency is acceptable for intelligence (not trading execution)
+- Backfillable: set checkpoint to any historical block to reprocess
+- No connection management, no Fargate, no always-on cost
+- Can be tightened to 1-minute latency by changing EventBridge schedule (still $0)
