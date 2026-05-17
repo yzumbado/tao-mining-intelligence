@@ -45,3 +45,8 @@ build/
 
 # Node (if CDK needs it)
 node_modules/
+
+# Credentials - NEVER commit
+*.csv
+*.xlsx
+~$*
