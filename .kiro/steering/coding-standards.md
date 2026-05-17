@@ -109,3 +109,43 @@ lambda/src/
 - Percentages: float in [0.0, 1.0]
 - Block numbers: positive integers
 - Hotkeys: SS58 format strings (start with "5")
+
+## Commit Documentation Strategy
+
+Commits are not just history — they are **guidance for future agents** navigating the codebase. Every fix or decision commit must follow this structure:
+
+### Structure
+
+```
+<type>(<scope>): <what changed>
+
+Diagnosis: How the problem was discovered and what symptoms were observed.
+
+Root cause: The actual underlying issue (not the symptom).
+
+[Attempted fix N: What was tried and why it failed.] (include all failed attempts)
+
+Fix: What was done and why this approach was chosen over alternatives.
+
+Verification: How the fix was validated (commands, test results).
+
+[Decision: Why this approach over alternatives — trade-offs considered.]
+
+[When to revisit: Conditions under which this fix should be reconsidered.]
+```
+
+### Rules
+
+- **Document failed attempts** — saves future agents from repeating dead ends
+- **Include the "why not" for alternatives** — not just what you did, but what you rejected
+- **Reference specific file:line when relevant** — makes it greppable
+- **State verification commands** — anyone should be able to reproduce validation
+- **Add "When to revisit"** for workarounds — so they don't become permanent tech debt
+- **Remove dead code** — if a fix attempt didn't work, don't leave it in the codebase; document it in the commit message instead
+
+### Why This Matters
+
+- An agent reading `git log` can reconstruct the full decision context
+- Failed approaches are documented once (in commits) instead of rediscovered repeatedly
+- The commit history becomes a searchable knowledge base of "what we tried and learned"
+- Future refactors can check if the conditions that forced a workaround still apply
