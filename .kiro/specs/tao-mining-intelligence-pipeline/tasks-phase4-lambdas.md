@@ -1,6 +1,6 @@
 # Phase 4: Lambda Handlers
 
-## Status: 🔄 Collector Lambda complete (tested), Processor and Finalizer next
+## Status: 🔄 Collector + Processor complete, Finalizer next
 
 ## Approach
 
@@ -37,7 +37,7 @@ Each Lambda handler wires together the core components (StateManager, StorageLay
 
 ### 4.2 Processor Lambda
 
-- [ ] 4.2a Write unit tests for Processor
+- [x] 4.2a Write unit tests for Processor
   - tests/unit/test_processor.py
   - Test: receives SQS message, reads raw data, computes metrics, stores results
   - Test: missing previous-day snapshot → trend metrics marked insufficient_data
@@ -46,7 +46,7 @@ Each Lambda handler wires together the core components (StateManager, StorageLay
   - Test: hotkey tracking (earnings, deregistration detection)
   - _Requirements: 3.1-3.7, 17.1-17.6_
 
-- [~] 4.2b Implement ProcessorHandler
+- [x] 4.2b Implement ProcessorHandler
   - lambda/src/processor/handler.py
   - handle() entry point: parse SQS message, set trace_id, process subnet
   - Wire MetricsEngine for all derived metrics
@@ -57,7 +57,7 @@ Each Lambda handler wires together the core components (StateManager, StorageLay
   - Full instrumentation
   - _Requirements: 3.1-3.7, 15.1-15.9, 17.1-17.6, 19.7-19.10_
 
-- [~] 4.2c Run tests — all must pass
+- [x] 4.2c Run tests — all must pass
 
 ### 4.3 Finalizer Lambda
 

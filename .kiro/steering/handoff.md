@@ -32,12 +32,52 @@ An automated pipeline that collects Bittensor subnet data daily, computes mining
 ## How to Orient Yourself
 
 1. **Start here**: `.kiro/specs/tao-mining-intelligence-pipeline/tasks.md` — master index showing phase status
-2. **Current phase**: `tasks-phase4-lambdas.md` — Collector done (4.1a-c ✅), Processor next (4.2a)
-3. **Architecture**: `design.md` in the same spec directory — full system design with algorithms
-4. **Requirements**: `requirements.md` — 43 requirements covering all functionality
-5. **Coding standards**: `.kiro/steering/coding-standards.md` — ALWAYS follow these
-6. **Knowledge base**: `kb/` directory — research findings, architecture decisions, infrastructure assessment
-7. **Validated SDK behavior**: `kb/bittensor-mining-research.md` — section "Validated Through Implementation"
+2. **Phase task files**: `tasks-phase1-validation.md` through `tasks-phase5-site.md` — granular task tracking per phase (checkboxes: `[x]` done, `[ ]` not started, `[~]` blocked)
+3. **Current phase**: `tasks-phase4-lambdas.md` — Collector done (4.1a-c ✅), Processor done (4.2a-c ✅), Finalizer next (4.3a)
+4. **Architecture**: `design.md` in the same spec directory — full system design with algorithms
+5. **Requirements**: `requirements.md` — 43 requirements covering all functionality
+6. **Coding standards**: `.kiro/steering/coding-standards.md` — ALWAYS follow these
+7. **Knowledge base**: `kb/` directory — research findings, architecture decisions, infrastructure assessment
+8. **Validated SDK behavior**: `kb/bittensor-mining-research.md` — section "Validated Through Implementation"
+
+## Pipeline Data Flow
+
+```
+EventBridge (daily 00:00 UTC)
+    │
+    ▼
+Collector Lambda
+    ├── Connects to Bittensor chain (AsyncSubtensor)
+    ├── Collects metagraphs for all active subnets
+    ├── Validates data, stores raw snapshots to S3
+    ├── Updates DynamoDB cycle state (FSM)
+    └── Publishes one SQS message per subnet → Processing Queue
+                │
+                ▼
+Processor Lambda (one invocation per subnet)
+    ├── Reads raw snapshot from S3
+    ├── Reads previous-day snapshot for trend comparison
+    ├── Runs MetricsEngine (pure functions) on the data
+    ├── Stores derived metrics to S3 + DynamoDB profiles
+    ├── Tracks hotkey earnings and deregistrations
+    └── Publishes completion to SNS → Completion Topic
+                │
+                ▼
+Finalizer Lambda (triggered when all subnets complete)
+    ├── Checks cycle completeness via StateManager
+    ├── Generates daily briefing + rankings
+    ├── Generates static HTML site (Jinja2 + Tailwind)
+    ├── Uploads site to CloudFront S3 bucket
+    └── Marks cycle complete in DynamoDB
+```
+
+## Reference Implementation: Collector Lambda
+
+The Collector (task 4.1) is the completed reference for how Lambda handlers should be built. Use it as the pattern for Processor and Finalizer:
+
+- **Test file**: `tests/unit/test_collector.py` — 16 tests covering idempotency, partial failure, graceful shutdown, SQS format, data validation, concurrency
+- **Handler**: `lambda/src/collector/handler.py` — module-level singletons for config/state/storage, `handle()` entry point, full instrumentation
+- **Pattern**: Module caches (`_config`, `_state_manager`, `_storage`), reset in test fixtures. Tests use `@mock_aws` + moto. Each test class covers one concern.
 
 ## Key Architecture Decisions
 
@@ -92,36 +132,31 @@ lambda/src/
 ## What's Next (Phase 4 Continuation)
 
 ### Immediate tasks (resume here):
-1. **Processor Lambda unit tests** (task 4.2a) — NEXT
-   - Write `tests/unit/test_processor.py`
-   - Test: receives SQS message, reads raw data, computes metrics, stores results
-   - Test: missing previous-day snapshot → trend metrics marked insufficient_data
-   - Test: SNS publish format correct
-   - Test: split profile writes (basic, winner, validator, intelligence, composability)
-   - Test: hotkey tracking (earnings, deregistration detection)
+1. **Finalizer Lambda unit tests** (task 4.3a) — NEXT
+   - Write `tests/unit/test_finalizer.py`
+   - Test: not all subnets done → early exit
+   - Test: all subnets done → generates briefing, rankings, site
+   - Test: briefing content matches expected for known input
+   - Test: rankings sorted correctly
 
-2. **Processor Lambda implementation** (task 4.2b)
-   - `lambda/src/processor/handler.py`
-   - Receives SQS message (netuid, date, cycle_id, trace_id)
-   - Reads raw snapshot from S3
-   - Reads previous day snapshot for trend comparison
-   - Runs MetricsEngine on the data
-   - Stores derived metrics to S3 + DynamoDB
-   - Updates subnet profiles (winner profile, intelligence notes)
-   - Publishes completion to SNS topic
-   - Full instrumentation with trace_id from SQS message
+2. **Finalizer Lambda implementation** (task 4.3b)
+   - `lambda/src/finalizer/handler.py`
+   - Receives SNS→SQS completion message
+   - Checks cycle completeness via StateManager
+   - Generates daily briefing + rankings
+   - Generates static HTML site (Jinja2 + Tailwind)
+   - Uploads site to CloudFront S3 bucket
+   - Marks cycle complete in DynamoDB
 
-3. **Finalizer Lambda** (tasks 4.3a/b)
-   - Tests then implementation
-
-4. **Property tests** (tasks 4.4a/b)
+3. **Property tests** (tasks 4.4a/b)
    - FSM Transition Validity (Property 6)
    - Subnet Discovery Set Operations (Property 12)
 
-### Completed in this session:
-- ✅ 4.1a: Collector unit tests (16 tests in tests/unit/test_collector.py)
-- ✅ 4.1b: CollectorHandler verified (already implemented, passes all tests)
-- ✅ 4.1c: Full test suite green (118/118 tests passing)
+### Completed:
+- ✅ 4.1a-c: Collector Lambda (16 unit tests)
+- ✅ 4.2a-c: Processor Lambda (17 unit tests, 135 total passing)
+  - Architecture decisions documented (Decisions 11-14)
+  - design.md and requirements.md updated (removed METRICS#latest, added GSI evolution path)
 
 ### After Phase 4:
 - Phase 5: Jinja2 templates, CDK stack, CloudFront, deployment, smoke test
@@ -129,6 +164,9 @@ lambda/src/
 ## How to Run Tests
 
 ```bash
+# Requires Python 3.12+ (project won't install on 3.9)
+# If setting up fresh: /opt/homebrew/bin/python3.12 -m venv .venv
+
 source .venv/bin/activate
 .venv/bin/pytest tests/ -v          # All 118 tests
 .venv/bin/pytest tests/properties/  # Property tests only (70 tests)

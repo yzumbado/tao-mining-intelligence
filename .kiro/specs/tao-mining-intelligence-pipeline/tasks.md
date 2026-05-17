@@ -11,7 +11,7 @@ The plan is split into focused task files by phase for manageability:
 | 1 | `tasks-phase1-validation.md` | SDK validation, project scaffolding | ✅ Complete |
 | 2 | `tasks-phase2-core.md` | State Manager, Storage, Instrumentation | ✅ Complete |
 | 3 | `tasks-phase3-metrics.md` | Metrics Engine (TDD: test first, then implement) | ✅ Complete |
-| 4 | `tasks-phase4-lambdas.md` | Collector, Processor, Finalizer Lambdas | 🔄 Collector done, Processor/Finalizer next |
+| 4 | `tasks-phase4-lambdas.md` | Collector, Processor, Finalizer Lambdas | 🔄 Collector + Processor done, Finalizer next |
 | 5 | `tasks-phase5-site.md` | Static site, CDK infrastructure, deployment | Not Started |
 
 ## Execution Approach
