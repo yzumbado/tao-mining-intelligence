@@ -52,17 +52,22 @@ async def _async_handle(event: dict, context: Any) -> dict:
     _init_clients()
     set_trace_id("", "")
 
-    # Parse SQS message
+    # Parse event — supports both SQS trigger and direct Lambda invoke
     try:
-        record = event["Records"][0]
-        body = json.loads(record["body"])
+        if "Records" in event:
+            # SQS trigger (legacy orchestrator path)
+            record = event["Records"][0]
+            body = json.loads(record["body"])
+        else:
+            # Direct invoke (EventBridge Scheduler path)
+            body = event
         netuid = body["netuid"]
-        date = body["date"]
-        cycle_id = body["cycle_id"]
-        trace_id = body.get("trace_id", "")
+        date = body.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+        cycle_id = body.get("cycle_id", date)
+        trace_id = body.get("trace_id", f"subnet-{netuid}-{date}")
     except (json.JSONDecodeError, KeyError, IndexError) as e:
-        logger.error(f"Failed to parse SQS message: {e}")
-        return {"status": "error", "error": f"malformed message: {e}"}
+        logger.error(f"Failed to parse event: {e}")
+        return {"status": "error", "error": f"malformed event: {e}"}
 
     set_trace_id(trace_id, cycle_id)
 

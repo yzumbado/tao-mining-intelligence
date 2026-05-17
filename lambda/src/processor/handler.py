@@ -14,7 +14,7 @@ Architecture decisions applied:
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import boto3
@@ -180,8 +180,12 @@ def handle(event: dict, context: Any) -> dict:
         # Publish SNS completion
         sns_published = _publish_completion(netuid, date, cycle_id, trace_id)
 
+        # Schedule next collection for this subnet (self-perpetuating loop)
+        next_scheduled = _schedule_next_collection(netuid, tempo)
+
         ctx["metrics_computed"] = metrics_computed
         ctx["sns_published"] = sns_published
+        ctx["next_scheduled"] = next_scheduled
 
         return {
             "status": "complete",
@@ -190,6 +194,7 @@ def handle(event: dict, context: Any) -> dict:
             "trace_id": trace_id,
             "metrics_computed": metrics_computed,
             "sns_published": sns_published,
+            "next_scheduled": next_scheduled,
         }
 
 
@@ -466,6 +471,56 @@ def _get_emission_rank(neuron, neurons) -> int:
 # ---------------------------------------------------------------------------
 # SNS publishing
 # ---------------------------------------------------------------------------
+
+
+def _schedule_next_collection(netuid: int, tempo: int) -> bool:
+    """Create a one-time EventBridge schedule for the next collection of this subnet.
+
+    The delay is max(min_refresh_interval, min(tempo_seconds, max_staleness)).
+    Schedule self-deletes after firing (ActionAfterCompletion=DELETE).
+    """
+    if not _config.is_aws:
+        return False
+
+    try:
+        scheduler = boto3.client("scheduler", region_name=_config.region)
+        refresh_policy = _state_manager.get_refresh_policy()
+
+        tempo_seconds = tempo * 12  # blocks × 12s per block
+        max_staleness_seconds = refresh_policy["max_staleness_hours"] * 3600
+        min_refresh_seconds = refresh_policy["min_refresh_interval_minutes"] * 60
+
+        delay_seconds = max(min_refresh_seconds, min(tempo_seconds, max_staleness_seconds))
+        next_run = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
+
+        collector_arn = os.environ.get("SUBNET_COLLECTOR_ARN", "")
+        scheduler_role_arn = os.environ.get("SCHEDULER_ROLE_ARN", "")
+
+        if not collector_arn or not scheduler_role_arn:
+            logger.warning("SUBNET_COLLECTOR_ARN or SCHEDULER_ROLE_ARN not set, skipping schedule")
+            return False
+
+        schedule_name = f"tao-subnet-{netuid}"
+
+        scheduler.create_schedule(
+            Name=schedule_name,
+            GroupName="default",
+            ScheduleExpression=f"at({next_run.strftime('%Y-%m-%dT%H:%M:%S')})",
+            ScheduleExpressionTimezone="UTC",
+            FlexibleTimeWindow={"Mode": "OFF"},
+            Target={
+                "Arn": collector_arn,
+                "RoleArn": scheduler_role_arn,
+                "Input": json.dumps({"netuid": netuid}),
+            },
+            ActionAfterCompletion="DELETE",
+        )
+        logger.info(f"Scheduled next collection for SN{netuid} at {next_run.isoformat()} "
+                    f"(delay={delay_seconds}s, tempo={tempo})")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to schedule next collection for SN{netuid}: {e}")
+        return False
 
 
 def _publish_completion(netuid: int, date: str, cycle_id: str, trace_id: str) -> bool:
