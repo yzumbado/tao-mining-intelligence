@@ -145,7 +145,8 @@ def lambda_context_low_time():
 def _make_mock_metagraph(netuid: int, neuron_count: int = 10):
     """Create a mock metagraph object mimicking the Bittensor SDK."""
     mg = MagicMock()
-    mg.n = neuron_count
+    mg.n = neuron_count  # SDK returns ndarray scalar, but int() is called in handler
+    mg.block = 5000000  # Current chain block (ndarray scalar in real SDK)
     mg.hotkeys = [f"5Hot{netuid}key{i:03d}" for i in range(neuron_count)]
     mg.coldkeys = [f"5Cold{netuid}key{i:03d}" for i in range(neuron_count)]
 
@@ -660,10 +661,10 @@ def _make_valid_snapshot(netuid: int, cycle_id: str) -> dict:
             "emission": 0.05,
             "consensus": 0.8,
             "dividends": 0.5 if is_validator else 0.0,
-            "trust": 0.9,
+            "validator_trust": 0.9,
             "active": True,
             "alpha_stake": 50.0,
-            "tao_stake": 150.0,
+            "total_stake": 150.0,
             "block_at_registration": 1000 + i * 100,
         })
 
@@ -672,7 +673,7 @@ def _make_valid_snapshot(netuid: int, cycle_id: str) -> dict:
             "netuid": netuid,
             "cycle_id": cycle_id,
             "collected_at": datetime.now(timezone.utc).isoformat(),
-            "source_block_number": 5000,
+            "source_block_number": 5000000,
             "neuron_count": neuron_count,
             "blocks_since_last_step": 50,
         },

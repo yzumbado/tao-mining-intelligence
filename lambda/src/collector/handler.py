@@ -295,7 +295,7 @@ async def _collect_metagraph(netuid: int, cycle_id: str) -> Optional[dict]:
 
         # Build snapshot data structure
         neurons = []
-        for i in range(mg.n):
+        for i in range(int(mg.n)):
             neurons.append({
                 "uid": i,
                 "hotkey": mg.hotkeys[i],
@@ -305,10 +305,10 @@ async def _collect_metagraph(netuid: int, cycle_id: str) -> Optional[dict]:
                 "emission": float(mg.E[i]),
                 "consensus": float(mg.C[i]),
                 "dividends": float(mg.D[i]),
-                "trust": float(mg.Tv[i]),
+                "validator_trust": float(mg.Tv[i]),
                 "active": bool(mg.active[i]),
                 "alpha_stake": float(mg.AS[i]),
-                "tao_stake": float(mg.TS[i]),
+                "total_stake": float(mg.TS[i]),
                 "block_at_registration": int(mg.block_at_registration[i]),
             })
 
@@ -317,8 +317,8 @@ async def _collect_metagraph(netuid: int, cycle_id: str) -> Optional[dict]:
                 "netuid": netuid,
                 "cycle_id": cycle_id,
                 "collected_at": datetime.now(timezone.utc).isoformat(),
-                "source_block_number": int(mg.block_at_registration[0]) if mg.n > 0 else 0,
-                "neuron_count": mg.n,
+                "source_block_number": int(mg.block),
+                "neuron_count": int(mg.n),
                 "blocks_since_last_step": int(mg.blocks_since_last_step),
             },
             "data": {

@@ -239,10 +239,10 @@ def _extract_reg_cost(reg_costs: Optional[dict], netuid: int) -> float:
 
 
 def _extract_tempo(hyperparams: Optional[dict]) -> int:
-    """Extract tempo from hyperparameters, default 360."""
+    """Extract tempo from hyperparameters, default 360. Minimum 1 to avoid division by zero."""
     if not hyperparams:
         return 360
-    return hyperparams.get("data", {}).get("tempo", 360)
+    return max(1, hyperparams.get("data", {}).get("tempo", 360))
 
 
 def _extract_immunity_period(hyperparams: Optional[dict]) -> int:
@@ -375,7 +375,7 @@ def _write_split_profiles(netuid: int, neurons, reward_model, gini, top_3,
     top_miners = [{
         "hotkey": m.hotkey[:12] + "...",
         "uid": m.uid,
-        "emission_share": m.emission / total_emission if total_emission > 0 else 0.0,
+        "emission_share": (m.emission / total_emission) if total_emission > 0 else 0.0,
         "stake": m.stake,
         "blocks_registered": m.block_at_registration,
         "incentive": m.incentive,
