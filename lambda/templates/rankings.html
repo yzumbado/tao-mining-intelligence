@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}TAO Mining Intelligence — Rankings{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Subnet Rankings</h1>
+<div class="overflow-x-auto">
+<table class="w-full text-sm text-left">
+    <thead class="text-xs text-gray-400 uppercase bg-[#161b22]">
+        <tr>
+            <th class="px-4 py-3">Rank</th>
+            <th class="px-4 py-3">Subnet</th>
+            <th class="px-4 py-3">TAO/day</th>
+            <th class="px-4 py-3">Recoup</th>
+            <th class="px-4 py-3">30d Proj</th>
+            <th class="px-4 py-3">Density</th>
+            <th class="px-4 py-3">Trend</th>
+            <th class="px-4 py-3">Score</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for r in rankings %}
+        <tr class="border-b border-gray-700">
+            <td class="px-4 py-3 text-gray-400">#{{ loop.index }}</td>
+            <td class="px-4 py-3 text-white font-medium">SN{{ r.netuid }}</td>
+            <td class="px-4 py-3">{{ "%.4f"|format(r.net_tao_yield) }}</td>
+            <td class="px-4 py-3">{{ "%.0f"|format(r.days_to_recoup) }}d</td>
+            <td class="px-4 py-3">{{ "%.2f"|format(r.thirty_day_projection) }}</td>
+            <td class="px-4 py-3">{{ "%.0f"|format(r.competitive_density * 100) }}%</td>
+            <td class="px-4 py-3 {% if r.emission_trend > 0 %}text-green-400{% elif r.emission_trend < 0 %}text-red-400{% endif %}">
+                {{ "%+.1f"|format(r.emission_trend * 100) }}%
+            </td>
+            <td class="px-4 py-3 text-white font-bold">{{ "%.2f"|format(r.attractiveness_score) }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

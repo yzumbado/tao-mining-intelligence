@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}TAO Mining Intelligence{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class' }</script>
+</head>
+<body class="bg-[#0d1117] text-gray-200 min-h-screen">
+    <nav class="bg-[#161b22] border-b border-gray-700 px-6 py-3">
+        <div class="max-w-7xl mx-auto flex items-center gap-6">
+            <a href="/index.html" class="text-lg font-bold text-white">TAO Intelligence</a>
+            <a href="/rankings.html" class="text-gray-400 hover:text-white">Rankings</a>
+            <a href="/briefings/latest.html" class="text-gray-400 hover:text-white">Briefing</a>
+        </div>
+    </nav>
+    <main class="max-w-7xl mx-auto px-6 py-8">
+        {% if staleness_warning %}
+        <div class="bg-yellow-900/30 border border-yellow-600 rounded-lg p-3 mb-6">
+            <span class="text-yellow-400 font-medium">⚠ Data may be stale</span>
+            <span class="text-yellow-200 text-sm ml-2">Last updated: {{ last_updated }}</span>
+        </div>
+        {% endif %}
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>
