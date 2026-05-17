@@ -626,7 +626,6 @@ class Jinja2SiteGenerator:
 | PK | SK | Attributes |
 |----|-----|------------|
 | `SUBNET#{netuid}` | `STATE` | last_collected, last_processed, current_status, last_error, retry_count, cycle_id |
-| `SUBNET#{netuid}` | `METRICS#latest` | All derived metric values (denormalized for fast read) |
 | `SUBNET#{netuid}` | `PROFILE#basic` | name, description, category, mining_style, reward_model, hardware_reqs, repo_url |
 | `SUBNET#{netuid}` | `PROFILE#winner` | winner_profile data (top-5 analysis, characteristics, patterns) |
 | `SUBNET#{netuid}` | `PROFILE#validator` | validator_profile data (landscape, concentration, yield) |
@@ -647,7 +646,12 @@ class Jinja2SiteGenerator:
 | `HOTKEY#{ss58}` | `SNAPSHOT#{date}` | per-subnet UID, emission, incentive, rank for that day |
 | `BRIEFING` | `{date}` | summary pointer, alerts count, subnets_affected |
 
-**Profile Split Rationale**: DynamoDB has a 400KB item size limit. Large subnet profiles (especially winner_profile with historical analysis and intelligence_notes with accumulated observations) can exceed this limit. Splitting into separate items ensures each stays well under 400KB while allowing independent updates.
+**Profile Split Rationale**: DynamoDB has a 400KB item size limit. The split profiles (`PROFILE#basic`, `PROFILE#winner`, `PROFILE#validator`, `PROFILE#intelligence`, `PROFILE#composability`) are the **single source of truth** for subnet metrics in DynamoDB. There is no `METRICS#latest` aggregate record — consumers read the specific profile they need. This avoids the 400KB limit and allows independent updates per profile type.
+
+**GSI Evolution Path**: The current design uses only the base table (PK/SK). At 1000+ subnets, add a GSI for cross-cutting queries:
+- `GSI1PK: category#{SubnetCategory}` | `GSI1SK: netuid#{netuid}` — enables "all COMPUTE subnets" queries
+- `GSI1PK: status#{PipelineState}` | `GSI1SK: SUBNET#{netuid}` — enables "all ERROR_FATAL subnets" queries
+- Don't add GSIs until needed — each GSI costs WCU on every write. At free-tier scale (<200 subnets), a Scan with FilterExpression is acceptable for infrequent admin queries.
 
 ### S3 Bucket Structure
 
@@ -909,6 +913,12 @@ def compute_roi_estimates(
     
     NOTE: On WTA subnets, average emission is misleading (most miners earn 0).
     The ROI estimate uses average across EARNING miners only (emission > 0).
+    
+    TEMPO CONVERSION RESPONSIBILITY: The Processor handler is responsible for
+    converting per-tempo emissions to per-day BEFORE calling MetricsEngine.
+    MetricsEngine.compute_roi_estimates() expects emission values already in
+    daily units. The handler reads `tempo` from hyperparameters and multiplies
+    each neuron's emission by (7200 / tempo) when preparing the Neuron list.
     """
     miner_emissions = [n.emission for n in snapshot.neurons 
                        if n.active and n.incentive > 0]

@@ -328,4 +328,103 @@ s3://tao-intelligence/
 
 4. **Multi-region**: Not needed for Phase 1. Single region (us-east-1). If Finney endpoint is unreliable, can add a fallback endpoint.
 
+---
+
+## Decision 11: Split Profiles as Single Source of Truth (No METRICS#latest)
+
+**Date**: 2026-05-16
+
+**Context**: The original design had a `SUBNET#{netuid}|METRICS#latest` DynamoDB item containing all derived metrics for a subnet. At 1000+ subnets with full per-neuron deregistration risk arrays, winner profiles, and intelligence notes, this single item risks exceeding DynamoDB's 400KB item size limit.
+
+**Decision**: Split profiles (`PROFILE#basic`, `PROFILE#winner`, `PROFILE#validator`, `PROFILE#intelligence`, `PROFILE#composability`) are the **single source of truth** for subnet metrics in DynamoDB. There is no aggregate `METRICS#latest` record.
+
+**Rationale**:
+- Each profile stays well under 400KB independently
+- Consumers read only the profile they need (one GetItem, not a fat blob)
+- Independent update frequency — basic profile rarely changes, winner profile changes daily
+- At 1000 subnets × 5 profiles = 5000 items — trivial for DynamoDB
+- Derived metrics are also stored in S3 at `derived/metrics/{date}/{netuid}.json` for full history
+
+**Implications**:
+- Ranking generation (Finalizer) reads `PROFILE#basic` for each subnet to build the ranking table
+- No single "get everything about subnet X" call — consumers make 1-5 targeted reads
+- If a "summary" view is needed later, it can be a GSI or a separate lightweight item
+
+---
+
+## Decision 12: Tempo Conversion is the Handler's Responsibility
+
+**Date**: 2026-05-16
+
+**Context**: The Bittensor SDK returns emission values in **alpha tokens per tempo** (where tempo is a subnet-specific hyperparameter, typically 360 blocks). The MetricsEngine needs daily emission values for ROI calculations. The question is: who converts per-tempo to per-day?
+
+**Decision**: The Processor handler reads `tempo` from hyperparameters and multiplies each neuron's emission by `(7200 / tempo)` **before** passing data to MetricsEngine. MetricsEngine functions expect emissions already in daily units.
+
+**Rationale**:
+- MetricsEngine stays pure — no dependency on hyperparameters or external context
+- Property tests for MetricsEngine work with simple inputs (no need to mock hyperparams)
+- The handler is the "wiring" layer that normalizes data between raw storage and pure computation
+- Different subnets have different tempos — the handler handles this per-subnet
+
+**Implications**:
+- MetricsEngine.compute_roi_estimates() assumes emission values are daily
+- Tests for MetricsEngine use pre-converted values
+- The Processor handler must always read hyperparameters to get tempo
+- If tempo is missing, handler uses default of 360 (most common value)
+
+---
+
+## Decision 13: Taoflow History — Graceful Degradation
+
+**Date**: 2026-05-16
+
+**Context**: `compute_taoflow_health()` requires multi-day stake and emission history (8+ days for death spiral detection). On day 1 of the pipeline, we have no history. Building up history takes time.
+
+**Decision**: Return `TaoflowStatus.HEALTHY` with `consecutive_negative_days=0` when insufficient history exists. Do not attempt to read N days of S3 snapshots — that's expensive and fragile.
+
+**Future path (when needed)**:
+- Store running daily totals in DynamoDB: `SUBNET#{netuid}|HISTORY` with last 30 days of {date: stake_total, emission_total}
+- Processor appends today's values on each run
+- After 8 days of data, Taoflow detection activates naturally
+
+**Rationale**:
+- Simplest correct behavior — "I don't have enough data" is not an error
+- Avoids N×S3 reads per subnet per cycle (at 128 subnets × 8 days = 1024 reads)
+- History accumulates naturally — no backfill needed
+- The pipeline is designed to run daily forever; patience is acceptable
+
+**Implications**:
+- First 7 days of pipeline operation: all subnets show HEALTHY (no false alarms)
+- Churn metrics similarly degrade gracefully (no previous day = zero churn reported)
+- Emission trend: no previous day = direction "stable", change_percent 0.0
+
+---
+
+## Decision 14: Per-Subnet FSM as Best-Effort Observability
+
+**Date**: 2026-05-16
+
+**Context**: The pipeline has two tracking mechanisms:
+1. **Cycle-level** (`CYCLE#{date}|STATUS`): tracks overall progress, gates the Finalizer
+2. **Per-subnet** (`SUBNET#{netuid}|STATE`): tracks individual subnet processing state
+
+The Finalizer only checks cycle-level completion (`subnets_complete >= subnets_total`). Per-subnet state is not on the critical path.
+
+**Decision**: Per-subnet FSM transitions are **best-effort**. The Processor attempts state transitions but does not fail processing if a transition is rejected (e.g., conditional check fails due to stale state).
+
+**Critical path**: `increment_cycle_progress(cycle_id)` — this is what gates the Finalizer.
+
+**Best-effort**: `transition(netuid, "IDLE", "PROCESSING")` and `transition(netuid, "PROCESSING", "COMPLETE")` — useful for debugging but not required for correctness.
+
+**Rationale**:
+- Cycle-level counter is atomic (DynamoDB ADD) and reliable
+- Per-subnet state can get stale if a previous cycle's error wasn't cleaned up
+- Failing processing because of a state transition issue would be worse than skipping the transition
+- Per-subnet state is valuable for: identifying stuck subnets, implementing 24h cooldown, dashboard visibility
+
+**Implications**:
+- Handler wraps per-subnet transitions in try/except — log warning on failure, continue processing
+- Cycle counter increment is NOT wrapped — if it fails, the processing result reflects the error
+- Future: add a "state reconciliation" step at cycle start that resets stale per-subnet states
+
 5. ~~**Cost budget**~~: RESOLVED — $0/month. All services within always-free tier. Container Image Lambda solves SDK size. SQS/SNS/CloudFront/Parameter Store all have generous free tiers.

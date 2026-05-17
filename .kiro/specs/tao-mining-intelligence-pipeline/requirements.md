@@ -69,7 +69,7 @@ The TAO Mining Intelligence Pipeline is an automated data collection and process
 4. THE Processor SHALL compute emission trend by comparing the current snapshot's total subnet emission against the previous day's snapshot for the same subnet.
 5. THE Processor SHALL compute per-miner emission share as each miner's emission divided by total subnet miner emission.
 6. THE Processor SHALL store derived metrics as a JSON file in S3 at the path `derived/metrics/{date}/{netuid}.json`.
-7. THE Processor SHALL update the DynamoDB record for the subnet (PK: `SUBNET#{netuid}`, SK: `METRICS#latest`) with the latest derived metric values.
+7. THE Processor SHALL update the DynamoDB split profile records for the subnet (PK: `SUBNET#{netuid}`, SK: `PROFILE#basic`, `PROFILE#winner`, `PROFILE#validator`, `PROFILE#intelligence`, `PROFILE#composability`) with the latest derived metric values appropriate to each profile type.
 
 ### Requirement 4: Deregistration Risk Scoring
 
