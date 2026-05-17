@@ -397,6 +397,12 @@ See `kb/architecture-decisions.md` for full details. Summary:
 - [⚠️] `burn_half_life` and `burn_increase_mult` NOT exposed by SDK — track empirically
 - [⚠️] Registration cost in RAO (500000 = 0.0005 TAO for SN1) — need unit conversion
 - [⚠️] `yuma_version` = 2 (YC2, not YC3 as we assumed)
+- [⚠️] `blocks_since_last_step` is a plain int scalar (value=87 on SN1), NOT an ndarray
+- [⚠️] `mg.n` is numpy ndarray scalar — `int(mg.n)` required for range() and JSON
+- [⚠️] `mg.block` is numpy ndarray scalar — this is the current chain block (8200740 observed)
+- [⚠️] `mg.block_at_registration[0]` is UID 0's registration block, NOT the current block
+- [⚠️] `mg.hotkeys[i]` returns plain Python `str` — no cast needed
+- [⚠️] No NaN/Inf observed in emission arrays on SN1 (but guard against it in validation)
 
 ### Still Open (Phase 1 - needed for implementation)
 - [ ] CoinGecko/Binance free API limits for TAO/USD price

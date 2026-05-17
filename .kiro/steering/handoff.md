@@ -92,15 +92,19 @@ The Collector (task 4.1) is the completed reference for how Lambda handlers shou
 
 ## SDK Gotchas (Validated Live)
 
-- `blocks_since_last_step` is a **subnet-level scalar**, NOT per-neuron
+- `blocks_since_last_step` is a **plain int scalar**, NOT per-neuron array — cannot index with `[i]`
+- `mg.n` is a **numpy ndarray scalar** — use `int(mg.n)` for range() and JSON serialization
+- `mg.block` is a **numpy ndarray scalar** — this is the current chain block, use `int(mg.block)`
+- `mg.block_at_registration[0]` is NOT the current block — it's UID 0's registration block (historical)
+- `mg.hotkeys[i]` returns plain `str` — no cast needed
 - `R` (rank) and `T` (trust) fields **don't exist** in SDK v10
 - Emission is in **alpha tokens per tempo** — multiply by `7200/tempo` for daily
-- `mg.n` is a numpy ndarray scalar — use `int(mg.n)`
 - `active` field is int64 (0/1), not bool — cast with `bool()`
 - Registration cost from chain is in RAO — divide by 1e9 for TAO
 - `get_subnet_price()` returns a Balance object — use `float(price)`
 - Only 4/247 miners earn on SN1 (extreme Winner-Takes-All)
 - Finney endpoint sometimes hangs — circuit breaker handles this
+- No NaN/Inf observed in emission arrays on SN1 (but guard against it)
 
 ## Code Structure
 
@@ -108,7 +112,7 @@ The Collector (task 4.1) is the completed reference for how Lambda handlers shou
 lambda/src/
 ├── config.py              # PIPELINE_ENV switching (local vs aws)
 ├── instrumentation.py     # Tracing with trace_id propagation
-├── validation.py          # Data validation at ingestion
+├── validation.py          # Data validation at ingestion (incl. NaN/Inf guard)
 ├── circuit_breaker.py     # Circuit breaker + timeout utilities
 ├── thresholds.py          # Configurable parameters with defaults
 ├── models/
@@ -120,7 +124,7 @@ lambda/src/
 │   └── storage_layer.py   # S3/local filesystem with compression
 ├── processor/
 │   ├── metrics.py         # ALL algorithms (pure functions, no AWS)
-│   └── handler.py         # [NOT YET BUILT] Processor Lambda
+│   └── handler.py         # ✅ Processor Lambda (metrics + profiles + hotkeys)
 ├── collector/
 │   └── handler.py         # ✅ Collector Lambda (async SDK collection)
 ├── finalizer/
@@ -157,6 +161,7 @@ lambda/src/
 - ✅ 4.2a-c: Processor Lambda (17 unit tests, 135 total passing)
   - Architecture decisions documented (Decisions 11-14)
   - design.md and requirements.md updated (removed METRICS#latest, added GSI evolution path)
+  - Tech debt cleared: field name alignment, NaN/Inf guard, error propagation, trace context safety
 
 ### After Phase 4:
 - Phase 5: Jinja2 templates, CDK stack, CloudFront, deployment, smoke test
@@ -168,9 +173,9 @@ lambda/src/
 # If setting up fresh: /opt/homebrew/bin/python3.12 -m venv .venv
 
 source .venv/bin/activate
-.venv/bin/pytest tests/ -v          # All 118 tests
+.venv/bin/pytest tests/ -v          # All 135 tests
 .venv/bin/pytest tests/properties/  # Property tests only (70 tests)
-.venv/bin/pytest tests/unit/        # Unit tests only (48 tests)
+.venv/bin/pytest tests/unit/        # Unit tests only (65 tests)
 python scripts/test_e2e_local.py    # Live chain test (needs internet)
 python scripts/validate_fields.py   # SDK field validation (needs internet)
 ```
@@ -186,8 +191,12 @@ python scripts/validate_fields.py   # SDK field validation (needs internet)
 ## Patterns That Work Well
 
 - **Validate with live data** before building on assumptions
+- **POC against live chain** catches bugs mocks hide (blocks_since_last_step, mg.n type, source_block_number)
 - **Property tests catch real bugs** (we found a floating-point issue in slippage)
 - **Simple types for metrics functions** (lists, floats) — easier to test with Hypothesis
 - **Pydantic models for storage/API boundaries** — type safety at the edges
 - **Instrument everything** — trace_id makes debugging across Lambdas trivial
 - **Commit after each completed task** — clean history, easy to revert
+- **Review after implementation** — found 7 critical bugs in the "working" code by asking "what are tests hiding?"
+- **Field name alignment matters** — Collector output field names must match Processor input expectations exactly
+- **Error propagation over swallowing** — StateManager now raises on throttling so SQS retries work

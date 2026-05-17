@@ -49,13 +49,15 @@ Assembly-line FSM model: Collector → Processor → Finalizer → Site Generato
 - Knowledge base: `kb/` — research, architecture decisions, infra assessment
 - Metrics engine: `lambda/src/processor/metrics.py` (pure functions, all algorithms)
 - Collector: `lambda/src/collector/handler.py` (done)
-- Processor handler: `lambda/src/processor/handler.py` (not yet built)
+- Processor handler: `lambda/src/processor/handler.py` (done)
 
 ## SDK Gotchas (important for implementation)
 - `blocks_since_last_step` is subnet-level scalar, NOT per-neuron
+- `mg.n` is numpy ndarray scalar — must use `int(mg.n)` for range() and JSON
+- `mg.block` is numpy ndarray scalar — this is the CURRENT chain block
+- `mg.block_at_registration[0]` is NOT the current block (it's UID 0's registration block)
 - `R` (rank) and `T` (trust) fields don't exist in SDK v10
 - Emission is in alpha tokens per tempo — multiply by `7200/tempo` for daily
-- Registration cost from chain is in RAO — divide by 1e9 for TAO
 - Only 4/247 miners earn on SN1 (extreme Winner-Takes-All)
 - Finney endpoint sometimes hangs — circuit breaker handles this
 
@@ -69,13 +71,11 @@ When working on this project:
 - All metric functions are PURE (no side effects, no AWS calls)
 - Never hardcode thresholds — always use configurable thresholds
 - Never use Python float in DynamoDB writes — always Decimal
-
-## Cross-Environment Note
-This project is also worked on in a separate Kiro workspace (the repo itself has `.kiro/` with specs and steering). When we work on it from Kiro-me, we need to **keep the internal project agent files up to date** (especially `handoff.md` and the task files) so that if work continues in the standalone workspace, the agent there has full context. This is a test of moving between work environments and agents.
+- After implementation: ask "what are tests hiding?" — run POCs against live chain
+- Error propagation over swallowing — raise on throttling, let SQS retry
 
 ## Next Steps
-1. Begin task 4.2a: Processor Lambda unit tests
-2. After tests pass, implement Processor Lambda (4.2b)
-3. Finalizer Lambda (4.3a-b)
-4. Remaining property tests (4.4a-b)
-5. Phase 5: site generation + CDK deployment
+1. Begin task 4.3a: Finalizer Lambda unit tests
+2. After tests pass, implement Finalizer Lambda (4.3b)
+3. Remaining property tests (4.4a-b)
+4. Phase 5: site generation + CDK deployment
