@@ -24,7 +24,7 @@ from typing import Optional
 import boto3
 from botocore.exceptions import ClientError
 
-from config import get_config, PipelineConfig
+from src.config import get_config, PipelineConfig
 
 logger = logging.getLogger(__name__)
 

@@ -58,6 +58,21 @@ def validate_metagraph(
             f"(UIDs: {negative_emissions[:5]})"
         )
 
+    # Check for NaN/Inf in numeric fields (numpy can produce these)
+    import math
+    non_finite_uids = []
+    for n in neurons:
+        for field in ("emission", "incentive", "stake", "consensus", "dividends"):
+            val = n.get(field, 0)
+            if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+                non_finite_uids.append(n.get("uid", "?"))
+                break
+    if non_finite_uids:
+        errors.append(
+            f"{len(non_finite_uids)} neurons with NaN/Inf values "
+            f"(UIDs: {non_finite_uids[:5]})"
+        )
+
     # Check incentive sums approximately to 1.0 for active miners
     miner_incentives = [
         n["incentive"]

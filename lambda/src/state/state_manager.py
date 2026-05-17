@@ -202,8 +202,8 @@ class StateManager:
                     f"rejected (conditional check failed)"
                 )
                 return False
-            logger.error(f"Subnet {netuid}: transition failed with error: {e}")
-            return False
+            # Throttling, internal errors, etc. — raise so caller can retry
+            raise
 
     def initialize_subnet_state(self, netuid: int) -> None:
         """Initialize a subnet state record if it doesn't exist.
@@ -413,8 +413,8 @@ class StateManager:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 logger.info(f"Cycle {cycle_id} already claimed (idempotent skip)")
                 return False
-            logger.error(f"Failed to claim cycle {cycle_id}: {e}")
-            return False
+            # Throttling, internal errors — raise so Lambda retries
+            raise
 
     def check_cycle_complete(self, cycle_id: str) -> bool:
         """Check if all subnets in a cycle have COMPLETE state.
@@ -475,17 +475,16 @@ class StateManager:
 
         Returns:
             The new value of subnets_complete after increment.
+
+        Raises:
+            ClientError: On DynamoDB errors (throttling, internal). Let SQS retry.
         """
-        try:
-            resp = self._table.update_item(
-                Key={"PK": f"CYCLE#{cycle_id}", "SK": "STATUS"},
-                UpdateExpression="ADD subnets_complete :inc",
-                ExpressionAttributeValues={":inc": 1},
-                ReturnValues="UPDATED_NEW",
-            )
-            new_count = int(resp["Attributes"]["subnets_complete"])
-            logger.debug(f"Cycle {cycle_id}: subnets_complete = {new_count}")
-            return new_count
-        except ClientError as e:
-            logger.error(f"Failed to increment cycle progress for {cycle_id}: {e}")
-            return -1
+        resp = self._table.update_item(
+            Key={"PK": f"CYCLE#{cycle_id}", "SK": "STATUS"},
+            UpdateExpression="ADD subnets_complete :inc",
+            ExpressionAttributeValues={":inc": 1},
+            ReturnValues="UPDATED_NEW",
+        )
+        new_count = int(resp["Attributes"]["subnets_complete"])
+        logger.debug(f"Cycle {cycle_id}: subnets_complete = {new_count}")
+        return new_count

@@ -50,6 +50,9 @@ def handle(event: dict, context: Any) -> dict:
     """Lambda entry point. Processes a single subnet's raw data into derived metrics."""
     _init_clients()
 
+    # Reset trace context immediately to avoid stale values from warm invocations
+    set_trace_id("", "")
+
     # Parse SQS message
     try:
         record = event["Records"][0]
