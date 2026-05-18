@@ -374,12 +374,67 @@ class TaoPipelineStack(Stack):
             treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
         )
 
-        # Discovery Lambda needs cloudwatch:PutMetricData
+        # Discovery Lambda needs cloudwatch:PutMetricData + scheduler:ListSchedules
         discovery_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["cloudwatch:PutMetricData"],
             resources=["*"],
             conditions={"StringEquals": {"cloudwatch:namespace": "TaoPipeline"}},
         ))
+        discovery_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["scheduler:ListSchedules"],
+            resources=["*"],
+        ))
+
+        # Lambda error rate alarms (fires if > 5 errors in 15 min)
+        for fn, name in [
+            (subnet_collector_fn, "Collector"),
+            (processor_fn, "Processor"),
+            (finalizer_fn, "Finalizer"),
+            (discovery_fn, "Discovery"),
+        ]:
+            cloudwatch.Alarm(
+                self, f"{name}ErrorAlarm",
+                alarm_name=f"tao-{name.lower()}-errors",
+                metric=fn.metric_errors(period=Duration.minutes(15)),
+                threshold=5,
+                evaluation_periods=1,
+                comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+                treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+            )
+
+        # Active schedules alarm (fires if loops are dying)
+        cloudwatch.Alarm(
+            self, "ScheduleCountAlarm",
+            alarm_name="tao-schedules-low",
+            metric=cloudwatch.Metric(
+                namespace="TaoPipeline",
+                metric_name="ActiveSchedules",
+                statistic="Minimum",
+                period=Duration.hours(1),
+            ),
+            threshold=50,
+            evaluation_periods=2,
+            comparison_operator=cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+            treat_missing_data=cloudwatch.TreatMissingData.BREACHING,
+        )
+
+        # =====================================================================
+        # Budget: Hard cost limit ($1/month)
+        # =====================================================================
+        from aws_cdk import aws_budgets as budgets
+
+        budgets.CfnBudget(
+            self, "CostBudget",
+            budget=budgets.CfnBudget.BudgetDataProperty(
+                budget_type="COST",
+                time_unit="MONTHLY",
+                budget_limit=budgets.CfnBudget.SpendProperty(
+                    amount=1.0,
+                    unit="USD",
+                ),
+                budget_name="tao-pipeline-monthly-limit",
+            ),
+        )
 
         # =====================================================================
         # CDN: CloudFront

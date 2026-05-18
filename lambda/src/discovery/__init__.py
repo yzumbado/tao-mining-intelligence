@@ -75,6 +75,9 @@ def handle(event: dict, context: Any) -> dict:
         # Publish staleness metric to CloudWatch
         _publish_staleness_metric(len(stale))
 
+        # Publish system health metrics
+        _publish_health_metrics(len(netuids), seeded, len(stale))
+
         ctx["new_subnets"] = len(new)
         ctx["stale_subnets"] = len(stale)
         ctx["seeded"] = seeded
@@ -140,6 +143,26 @@ def _publish_staleness_metric(stale_count: int) -> None:
         )
     except Exception as e:
         logger.warning(f"Failed to publish staleness metric: {e}")
+
+
+def _publish_health_metrics(total_subnets: int, seeded: int, stale: int) -> None:
+    """Publish system health metrics to CloudWatch."""
+    try:
+        scheduler = boto3.client("scheduler", region_name=_config.region)
+        schedules = scheduler.list_schedules(NamePrefix="tao-subnet-")
+        active_schedules = len(schedules.get("Schedules", []))
+
+        cw = boto3.client("cloudwatch", region_name=_config.region)
+        cw.put_metric_data(
+            Namespace="TaoPipeline",
+            MetricData=[
+                {"MetricName": "ActiveSchedules", "Value": active_schedules, "Unit": "Count"},
+                {"MetricName": "TotalSubnets", "Value": total_subnets, "Unit": "Count"},
+                {"MetricName": "SubnetsSeeded", "Value": seeded, "Unit": "Count"},
+            ],
+        )
+    except Exception as e:
+        logger.warning(f"Failed to publish health metrics: {e}")
 
 
 def _create_schedule(netuid: int, delay_seconds: int = 0) -> bool:
