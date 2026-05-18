@@ -237,12 +237,117 @@ See `scripts/generate_metrics_reference.py` for the AST walking pattern.
 - Parse the `__stage_contract__` dict literal from each handler file
 - Render markdown with tables and a text flow diagram
 
+**Expected output** (`kb/architecture-live.md`):
+
+```markdown
+# Architecture — Live Data Flow
+
+> **Auto-generated** from `__stage_contract__` declarations in handler files.
+> **Last generated**: 2026-05-18 14:30 UTC
+>
+> Do NOT edit manually. Update the contract in the handler, then run:
+> `python scripts/generate_architecture.py`
+
+---
+
+## Pipeline Flow
+
+​```
+EventBridge Rule (hourly)
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Discovery                                            │
+│ Trigger: schedule (tao-hourly-discovery, every 1h)   │
+│ Reads:   DynamoDB (processed_at), Bittensor chain    │
+│ Writes:  EventBridge one-time schedules              │
+└─────────────────────────────────────────────────────┘
+    │ creates schedule per subnet
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ SubnetCollector                                      │
+│ Trigger: eventbridge_schedule (tao-subnet-{netuid})  │
+│ Reads:   Bittensor chain (metagraph, hyperparams)    │
+│ Writes:  S3 (raw/*), SQS (tao-process-subnet)       │
+└─────────────────────────────────────────────────────┘
+    │ SQS message
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Processor                                            │
+│ Trigger: sqs (tao-process-subnet)                    │
+│ Reads:   S3 (raw/*), S3 (prev day snapshot)          │
+│ Writes:  S3 (derived/*), DynamoDB (PROFILE#*)        │
+│ Invokes: Finalizer (async)                           │
+│ Schedules: tao-subnet-{netuid} (next collection)     │
+└─────────────────────────────────────────────────────┘
+    │ async invoke
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Finalizer                                            │
+│ Trigger: lambda_invoke (from Processor)              │
+│ Reads:   S3 (derived/metrics/*), DynamoDB (CONFIG)   │
+│ Writes:  S3 (derived/rankings, briefings)            │
+│          DynamoDB (RANKING, BRIEFING)                 │
+│          S3 site bucket (data/*, llms.txt)            │
+└─────────────────────────────────────────────────────┘
+​```
+
+---
+
+## Stage Details
+
+### Discovery
+
+| Property | Value |
+|----------|-------|
+| Trigger | EventBridge rule, hourly |
+| Timeout | 60s |
+| Memory | 512 MB |
+
+**Inputs**:
+| Type | Path/Key | Required | Description |
+|------|----------|----------|-------------|
+| dynamodb | SUBNET#*/PROFILE#basic | Yes | Check processed_at for staleness |
+| bittensor_chain | get_all_subnets() | Yes | Active subnet list |
+
+**Outputs**:
+| Type | Path/Key | Description |
+|------|----------|-------------|
+| eventbridge_schedule | tao-subnet-{netuid} | One-time schedule per new/stale subnet |
+
+**Environment Variables**: None (uses PipelineConfig)
+
+---
+
+### SubnetCollector
+
+(... same table format for each stage ...)
+
+---
+
+## Environment Variables Summary
+
+| Variable | Used By | Purpose |
+|----------|---------|---------|
+| PROCESS_QUEUE_URL | SubnetCollector | SQS queue URL for triggering Processor |
+| AGGREGATOR_ARN | Processor | Lambda ARN to invoke Finalizer |
+| SUBNET_COLLECTOR_ARN | Processor | Lambda ARN for self-scheduling |
+| SCHEDULER_ROLE_ARN | Processor | IAM role for EventBridge schedules |
+| SITE_BUCKET_NAME | Finalizer | S3 bucket for public site files |
+```
+
+**Handler file paths to parse** (in order):
+1. `lambda/src/discovery/handler.py`
+2. `lambda/src/subnet_collector/handler.py`
+3. `lambda/src/processor/handler.py`
+4. `lambda/src/finalizer/handler.py`
+
 **Validation**:
 - Run the generator
 - Compare output to the hand-written architecture in `design.md` (lines 80-150)
 - Document any discrepancies (this IS the success signal)
 
-**Acceptance criteria**: Generator runs, produces readable output, matches or improves on hand-written docs.
+**Acceptance criteria**: Generator runs, produces readable output that matches the expected format above, and matches or improves on hand-written docs.
 
 **Effort**: 45 min
 
