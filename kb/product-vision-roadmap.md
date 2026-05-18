@@ -278,3 +278,22 @@ and capital allocation, while the machine handles discovery, execution, and opti
 **Data we already have**: Per-subnet emission, stake, alpha prices, validator dividends, miner incentives. All refreshing every 20-72 min.
 
 **Priority**: HIGH — unlocks intuitive understanding of where TAO is accumulating.
+
+### Validator Scoring Reverse Engineering
+
+**Idea**: Analyze validator code to understand exactly HOW miners are scored. The validator's scoring logic determines who earns and who gets deregistered — understanding it is the key to building a winning miner.
+
+**Why this matters**: On-chain data tells us WHO is winning (incentive distribution), but not WHY. The "why" lives in the validator code — their reward function, evaluation criteria, quality thresholds. If you understand the scoring, you can optimize directly for it.
+
+**What to analyze per subnet**:
+- Validator repo (usually public on GitHub)
+- Reward function: what inputs, what outputs, how is quality measured?
+- Evaluation frequency: how often are miners scored?
+- Penalty conditions: what gets you zero score?
+- Gaming detection: do validators check for cheating/shortcuts?
+
+**Relationship to Stage 2 (Research)**: This IS part of Research but deserves its own focus. Stage 2 answers "what model type do I need?" — this answers "what specific behavior does the validator reward?" It's the difference between "you need an LLM" and "you need an LLM that scores > 0.8 on the validator's custom benchmark with latency < 2s."
+
+**Approach**: LLM-powered code analysis of validator repos. Extract the reward function, summarize scoring criteria in structured format, identify the minimum quality bar to earn.
+
+**Priority**: HIGH — directly determines mining success. A miner optimized for the validator's actual scoring function will outperform one that just "runs a good model."
