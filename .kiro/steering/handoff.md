@@ -43,33 +43,42 @@ An automated pipeline that collects Bittensor subnet data daily, computes mining
 ## Pipeline Data Flow
 
 ```
-EventBridge (daily 00:00 UTC)
-    │
-    ▼
-Collector Lambda
-    ├── Connects to Bittensor chain (AsyncSubtensor)
-    ├── Collects metagraphs for all active subnets
-    ├── Validates data, stores raw snapshots to S3
-    ├── Updates DynamoDB cycle state (FSM)
-    └── Publishes one SQS message per subnet → Processing Queue
+Discovery Lambda (hourly safety net)
+    ├── Queries chain for active subnets
+    ├── Checks each subnet's processed_at for staleness
+    └── Creates EventBridge schedules for new/stale subnets
+                │
+                ▼
+EventBridge Scheduler (one-time, per subnet, self-perpetuating)
+                │
+                ▼
+SubnetCollector Lambda (one subnet per invocation)
+    ├── Collects metagraph from Bittensor chain
+    ├── Collects hyperparameters, alpha price, reg cost
+    ├── Validates (warn on quality issues, don't reject)
+    ├── Stores raw snapshot to S3 (with collected_at, source_block)
+    └── Sends SQS message → Processing Queue
                 │
                 ▼
 Processor Lambda (one invocation per subnet)
     ├── Reads raw snapshot from S3
     ├── Reads previous-day snapshot for trend comparison
     ├── Runs MetricsEngine (pure functions) on the data
-    ├── Stores derived metrics to S3 + DynamoDB profiles
-    ├── Tracks hotkey earnings and deregistrations
-    └── Publishes completion to SNS → Completion Topic
+    ├── Stores derived metrics to S3 (with processed_at)
+    ├── Writes profiles to DynamoDB (with processed_at)
+    ├── Invokes Aggregator (async) → rankings recompute
+    └── Creates next EventBridge schedule (tempo-based, self-perpetuating)
                 │
                 ▼
-Finalizer Lambda (triggered when all subnets complete)
-    ├── Checks cycle completeness via StateManager
-    ├── Generates daily briefing + rankings
-    ├── Generates static HTML site (Jinja2 + Tailwind)
-    ├── Uploads site to CloudFront S3 bucket
-    └── Marks cycle complete in DynamoDB
+Aggregator Lambda (invoked after each subnet completes)
+    ├── Reads ALL current profiles from DynamoDB
+    ├── Generates rankings from whatever data exists
+    ├── Generates daily briefing (rolling 24h changes)
+    └── Stores rankings + briefing to S3
 ```
+
+**Note**: Old batch path (Orchestrator → SQS → SNS → Finalizer gate) still exists
+in CDK for backward compatibility. Phase 3 will remove it.
 
 ## Reference Implementation: Collector Lambda
 
@@ -82,13 +91,16 @@ The Collector (task 4.1) is the completed reference for how Lambda handlers shou
 ## Key Architecture Decisions
 
 - **Container Image Lambda** (not zip) — Bittensor SDK is 200-300MB
-- **SQS/SNS orchestration** (not S3 events) — reliable completion detection
+- **Self-scheduling per-subnet loops** (AD18) — each subnet refreshes independently at its tempo cadence
+- **EventBridge Scheduler one-time schedules** — self-cleaning, exact timing, no orchestrator in hot path
+- **Discovery Lambda** (hourly) — safety net for new/stale subnets, not a coordinator
+- **Rankings as live view** — recomputed after each subnet update, not gated on "all complete"
 - **Two S3 buckets** — private data + CloudFront-only site
 - **DynamoDB single-table** with split profiles (400KB limit)
 - **Jinja2 + Tailwind CSS** (not MkDocs) — direct HTML generation
 - **Configurable thresholds** in DynamoDB (editable via AWS Console)
 - **Circuit breaker** + per-operation timeouts
-- **Idempotent cycles** via cycle_id + conditional DynamoDB writes
+- **Validation warns, doesn't reject** — data quality flag in metadata, processing continues
 
 ## SDK Gotchas (Validated Live)
 

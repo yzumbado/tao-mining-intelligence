@@ -547,7 +547,7 @@ EventBridge (hourly) → Orchestrator → Collection Queue (SQS)
 
 ## Decision 18: Independent Subnet Refresh over Batch Cycle
 
-> **Status**: Approved (Phase 1 foundation committed 2026-05-17)
+> **Status**: Phase 2 Complete (self-scheduling loops live, Phase 3 pending: cleanup old resources)
 > **Full document**: `kb/architecture-decision-18-independent-refresh.md`
 
 **Context**: First live deployment proved the batch cycle model (daily, all-or-nothing) creates artificial coupling. One subnet failure blocks output for all 128 others.
