@@ -177,8 +177,11 @@ def handle(event: dict, context: Any) -> dict:
         except Exception as e:
             logger.warning(f"Per-subnet COMPLETE transition failed (best-effort): {e}")
 
-        # Publish SNS completion
+        # Publish SNS completion (legacy path — kept for backward compat)
         sns_published = _publish_completion(netuid, date, cycle_id, trace_id)
+
+        # Invoke Aggregator to recompute rankings (AD18: rankings are a live view)
+        _invoke_aggregator(netuid, date, cycle_id, trace_id)
 
         # Schedule next collection for this subnet (self-perpetuating loop)
         next_scheduled = _schedule_next_collection(netuid, tempo)
@@ -471,6 +474,31 @@ def _get_emission_rank(neuron, neurons) -> int:
 # ---------------------------------------------------------------------------
 # SNS publishing
 # ---------------------------------------------------------------------------
+
+
+def _invoke_aggregator(netuid: int, date: str, cycle_id: str, trace_id: str) -> None:
+    """Invoke the Finalizer/Aggregator Lambda to recompute rankings.
+
+    AD18: Rankings are a live view — recomputed after each subnet update.
+    Best-effort: if invocation fails, rankings are stale but not lost.
+    """
+    if not _config.is_aws:
+        return
+
+    aggregator_arn = os.environ.get("AGGREGATOR_ARN", "")
+    if not aggregator_arn:
+        return
+
+    try:
+        lambda_client = boto3.client("lambda", region_name=_config.region)
+        lambda_client.invoke(
+            FunctionName=aggregator_arn,
+            InvocationType="Event",  # Async — don't wait for response
+            Payload=json.dumps({"date": date, "cycle_id": cycle_id,
+                                "trace_id": trace_id, "trigger_netuid": netuid}).encode(),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to invoke Aggregator (best-effort): {e}")
 
 
 def _schedule_next_collection(netuid: int, tempo: int) -> bool:

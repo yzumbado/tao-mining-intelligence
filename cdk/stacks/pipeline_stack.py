@@ -363,6 +363,10 @@ class TaoPipelineStack(Stack):
         # Add env vars for self-scheduling
         processor_fn.add_environment("SUBNET_COLLECTOR_ARN", subnet_collector_fn.function_arn)
         processor_fn.add_environment("SCHEDULER_ROLE_ARN", scheduler_role.role_arn)
+        processor_fn.add_environment("AGGREGATOR_ARN", finalizer_fn.function_arn)
+
+        # Processor invokes Aggregator (async) after each subnet
+        finalizer_fn.grant_invoke(processor_fn)
 
         # =====================================================================
         # Monitoring: DLQ Alarms

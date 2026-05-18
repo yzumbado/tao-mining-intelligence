@@ -149,8 +149,8 @@ lambda/src/
 
 ### Architecture Decision 18: Independent Subnet Refresh (APPROVED)
 - Phase 1 foundation committed (configurable refresh policy, timestamps, relaxed validation)
-- Phase 2 pending: self-scheduling loops via EventBridge Scheduler
-- Phase 3 pending: Discovery Lambda, remove old orchestration, documentation overhaul
+- Phase 2 complete: self-scheduling loops, Discovery Lambda, Aggregator invocation
+- Phase 3 pending: Remove old resources (Orchestrator, SNS, completion queue), llms.txt, metadata.json, staleness alarm, documentation overhaul
 - See `kb/architecture-decision-18-independent-refresh.md` for full design
 
 ### Completed:
