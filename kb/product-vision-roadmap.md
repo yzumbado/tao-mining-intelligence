@@ -297,3 +297,62 @@ and capital allocation, while the machine handles discovery, execution, and opti
 **Approach**: LLM-powered code analysis of validator repos. Extract the reward function, summarize scoring criteria in structured format, identify the minimum quality bar to earn.
 
 **Priority**: HIGH — directly determines mining success. A miner optimized for the validator's actual scoring function will outperform one that just "runs a good model."
+
+### TAO Flow — Follow the Money (Wallet Map)
+
+**Idea**: Build a pipeline stage that maps the flow of TAO through the network — who earns, who sells, who accumulates, which wallets are linked. Create a transparency layer that exposes extractive subnets vs productive ones.
+
+**What it produces**:
+- Wallet graph: which coldkeys control which subnets, miners, validators
+- Flow analysis: where does earned TAO go? (held, sold on exchange, re-staked)
+- Extraction score: per-subnet metric of "TAO out vs value produced"
+- Ponzi detector: flag subnets where returns come from new stakers, not value creation
+- Historical tracking: is a subnet becoming more or less extractive over time?
+
+**Data sources**:
+- On-chain: emission events, stake/unstake, transfers, registration events
+- Exchange deposits: known exchange wallet addresses (public)
+- Our existing metagraph data: who earns what, monopoly detection
+
+**Why this matters**: Most TAO stakers have no visibility into whether their subnet is productive or extractive. This data creates an information advantage — and a product.
+
+**Priority**: HIGH — directly enables the "Smart Validator" idea below.
+
+---
+
+### Smart Validator — Stake Only on Real Projects
+
+**Idea**: Run a public validator that ONLY stakes on subnets producing real AI commodities. Market it as "the anti-extraction validator" — stakers delegate to us because we do the research they can't.
+
+**The pitch to stakers**: "We analyze every subnet. We only stake where real work is happening. Your TAO earns yield from productive subnets, not Ponzi schemes. We publish our research openly."
+
+**How it works**:
+1. Pipeline Stage 1 (COLLECT) provides real-time subnet metrics ✅
+2. TAO Flow analysis identifies extractive vs productive subnets
+3. Stage 2 (RESEARCH) classifies each subnet's actual output
+4. Our validator auto-allocates stake to top productive subnets
+5. Stakers delegate to us → we earn validator commission
+6. We publish transparency reports (builds trust, attracts more stakers)
+
+**Revenue model**:
+- Validator commission: typically 10-18% of staker earnings
+- If we attract 100K TAO in delegated stake across productive subnets
+- At ~5% APY on productive subnets = 5,000 TAO/year to stakers
+- Our commission (10%): 500 TAO/year (~$130K at current prices)
+- Scales linearly with delegated stake
+
+**Why it could work**:
+- No one else is doing data-driven subnet selection publicly
+- Stakers WANT to avoid Ponzi subnets but can't analyze 129 subnets themselves
+- Transparency builds trust in an opaque ecosystem
+- The pipeline we already built IS the competitive moat
+- Aligns incentives: we earn more when productive subnets earn more
+
+**What we need**:
+- TAO Flow analysis (wallet mapping, extraction scoring)
+- Public dashboard showing our methodology
+- Validator infrastructure (can run on a VPS, ~$50/month)
+- Marketing/community presence (Discord, Twitter)
+- Enough initial stake to be a credible validator (~1,000+ TAO)
+
+**Priority**: HIGH — this is potentially the business model for the entire project. The pipeline pays for itself by attracting delegated stake.
