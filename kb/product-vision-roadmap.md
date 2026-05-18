@@ -258,3 +258,23 @@ The system becomes a **TAO compounding engine**:
 
 The human's role shifts from "operator" to "investor" — setting risk parameters
 and capital allocation, while the machine handles discovery, execution, and optimization.
+
+---
+
+## Backlog (High Priority Ideas)
+
+### TAO Flow Visualization
+
+**Idea**: Create a real-time visualization of TAO flowing through the Bittensor network — showing how emission moves from subnets to miners/validators, how stake flows between subnets, and where the money is going.
+
+**Why**: The raw numbers (TAO/day, stake amounts) are hard to intuit. A flow visualization (Sankey diagram, animated graph, or heatmap) would make the network's economics immediately legible — both for human decision-making and for communicating opportunities.
+
+**Research needed**:
+- What visualization libraries work for flow data? (D3.js Sankey, Observable, Grafana)
+- Can we generate it statically (S3 + CloudFront) or need a backend?
+- What data do we already have vs what we'd need to collect?
+- How to show time dimension (flows changing over days/weeks)?
+
+**Data we already have**: Per-subnet emission, stake, alpha prices, validator dividends, miner incentives. All refreshing every 20-72 min.
+
+**Priority**: HIGH — unlocks intuitive understanding of where TAO is accumulating.
