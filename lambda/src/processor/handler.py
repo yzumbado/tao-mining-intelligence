@@ -85,9 +85,9 @@ def handle(event: dict, context: Any) -> dict:
 
         # Read supplementary data
         alpha_prices = _storage.read_snapshot(
-            _storage.get_date_path("raw/alpha-prices", date))
+            _storage.get_date_path("raw/alpha-prices", date, netuid))
         reg_costs = _storage.read_snapshot(
-            _storage.get_date_path("raw/registration-costs", date))
+            _storage.get_date_path("raw/registration-costs", date, netuid))
         hyperparams = _storage.read_snapshot(
             _storage.get_date_path("raw/hyperparameters", date, netuid))
 
@@ -233,7 +233,12 @@ def _extract_alpha_price(alpha_prices: Optional[dict], netuid: int) -> tuple[flo
     """Extract alpha/TAO price and pool liquidity for a specific subnet."""
     if not alpha_prices:
         return 0.0, 0.0
-    for p in alpha_prices.get("data", {}).get("prices", []):
+    data = alpha_prices.get("data", {})
+    # Per-subnet format: {data: {alpha_tao_price: ..., pool_tao_liquidity: ...}}
+    if "alpha_tao_price" in data:
+        return data.get("alpha_tao_price", 0.0), data.get("pool_tao_liquidity", 0.0)
+    # Consolidated format: {data: {prices: [{netuid: N, ...}]}}
+    for p in data.get("prices", []):
         if p.get("netuid") == netuid:
             return p.get("alpha_tao_price", 0.0), p.get("pool_tao_liquidity", 0.0)
     return 0.0, 0.0
@@ -243,7 +248,12 @@ def _extract_reg_cost(reg_costs: Optional[dict], netuid: int) -> float:
     """Extract registration cost in TAO for a specific subnet."""
     if not reg_costs:
         return 0.0
-    for c in reg_costs.get("data", {}).get("costs", []):
+    data = reg_costs.get("data", {})
+    # Per-subnet format: {data: {registration_cost_tao: ...}}
+    if "registration_cost_tao" in data:
+        return data.get("registration_cost_tao", 0.0)
+    # Consolidated format: {data: {costs: [{netuid: N, ...}]}}
+    for c in data.get("costs", []):
         if c.get("netuid") == netuid:
             return c.get("registration_cost_tao", 0.0)
     return 0.0

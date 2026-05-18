@@ -354,7 +354,7 @@ class MetricsEngine:
             ROIEstimate with yield, payback, and projection data.
         """
         miner_emissions = [
-            n.emission for n in neurons if n.active and n.incentive > 0
+            n.emission for n in neurons if n.incentive > 0
         ]
 
         if not miner_emissions or alpha_tao_price <= 0:
