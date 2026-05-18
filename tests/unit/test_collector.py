@@ -534,14 +534,14 @@ class TestDataValidation:
         assert any("backwards" in e for e in errors)
 
     def test_too_many_neurons_rejected(self):
-        """More than 256 neurons is flagged as invalid."""
+        """More than 4096 neurons is flagged as invalid."""
         from src.validation import validate_metagraph
 
-        neurons = [{"uid": i, "emission": 0, "incentive": 0, "dividends": 0} for i in range(300)]
+        neurons = [{"uid": i, "emission": 0, "incentive": 0, "dividends": 0} for i in range(4100)]
         snapshot = {"metadata": {}, "data": {"neurons": neurons}}
         is_valid, errors = validate_metagraph(snapshot)
         assert not is_valid
-        assert any("exceeds max 256" in e for e in errors)
+        assert any("exceeds max 4096" in e for e in errors)
 
     @mock_aws
     def test_invalid_metagraph_not_stored(self, aws_env, lambda_context):

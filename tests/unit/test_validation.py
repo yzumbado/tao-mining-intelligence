@@ -60,11 +60,11 @@ class TestValidateMetagraph:
         assert any("incentive sum" in e for e in errors)
 
     def test_too_many_neurons_fails(self):
-        neurons = [{"uid": i, "emission": 0, "incentive": 0, "dividends": 0} for i in range(300)]
+        neurons = [{"uid": i, "emission": 0, "incentive": 0, "dividends": 0} for i in range(4100)]
         data = {"metadata": {}, "data": {"neurons": neurons}}
         is_valid, errors = validate_metagraph(data)
         assert not is_valid
-        assert any("exceeds max 256" in e for e in errors)
+        assert any("exceeds max 4096" in e for e in errors)
 
     def test_no_previous_block_skips_check(self):
         data = {

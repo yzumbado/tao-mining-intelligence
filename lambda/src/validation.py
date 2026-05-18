@@ -103,9 +103,9 @@ def validate_metagraph(
                 f"tolerance 0.01)"
             )
 
-    # Check for reasonable neuron count (subnets have max 256 UIDs)
-    if len(neurons) > 256:
-        errors.append(f"Neuron count {len(neurons)} exceeds max 256")
+    # Check for reasonable neuron count (subnets can have up to 4096 UIDs)
+    if len(neurons) > 4096:
+        errors.append(f"Neuron count {len(neurons)} exceeds max 4096")
 
     return (len(errors) == 0, errors)
 

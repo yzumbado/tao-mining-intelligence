@@ -92,7 +92,7 @@ class Neuron(BaseModel):
     NOT per-neuron. It's stored in the snapshot metadata, not per neuron.
     """
 
-    uid: int = Field(ge=0, le=255)
+    uid: int = Field(ge=0, le=4096)
     hotkey: str
     coldkey: str
     stake: float = Field(ge=0.0, description="Stake in TAO (from S field)")
@@ -277,7 +277,7 @@ class TaoPriceRecord(BaseModel):
 class DeregistrationRisk(BaseModel):
     """Deregistration risk assessment for a single miner."""
 
-    uid: int = Field(ge=0, le=255)
+    uid: int = Field(ge=0, le=4096)
     hotkey: str
     risk_score: float = Field(ge=0.0, le=1.0)
     emission_rank: int = Field(ge=0)
@@ -534,7 +534,7 @@ class WinnerCharacteristics(BaseModel):
     """Characteristics of a top-performing miner."""
 
     hotkey: str
-    uid: int = Field(ge=0, le=255)
+    uid: int = Field(ge=0, le=4096)
     emission_share: float = Field(ge=0.0, le=1.0)
     stake: float = Field(ge=0.0, description="Stake in TAO")
     blocks_registered: int = Field(ge=0)
@@ -660,7 +660,7 @@ class HotkeyPosition(BaseModel):
     """A hotkey's position in a single subnet on a given day."""
 
     netuid: int = Field(ge=0)
-    uid: int = Field(ge=0, le=255)
+    uid: int = Field(ge=0, le=4096)
     emission: float = Field(ge=0.0, description="Daily emission in TAO")
     incentive: float = Field(ge=0.0, le=1.0)
     rank: int = Field(ge=0, description="Emission rank within subnet")
