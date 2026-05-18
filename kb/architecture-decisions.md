@@ -1,6 +1,6 @@
 # Architecture Decisions Log
 
-> **Last Updated**: 2026-05-14  
+> **Last Updated**: 2026-05-17  
 > **Purpose**: Record architectural decisions and rationale as we refine the design
 
 ---
@@ -153,6 +153,8 @@ Subnet Category:
 ---
 
 ## Decision 6: Finite State Machine for Pipeline Orchestration
+
+> **Note**: Partially superseded by Decision 18. The per-subnet FSM and DynamoDB state tracking remain, but the batch cycle orchestration (Orchestrator → all subnets → gate Finalizer) has been replaced by self-scheduling independent loops.
 
 **Context**: We need predictable, debuggable orchestration that handles failures gracefully.
 
@@ -480,6 +482,8 @@ Initial deployment frequencies:
 
 ## Decision 16: Orchestrator + SubnetCollector Split (Eliminate Burst Load)
 
+> **Note**: Superseded by Decision 18. The Orchestrator has been removed from the hot path. Discovery Lambda (hourly safety net) replaces the Orchestrator's subnet discovery role. SubnetCollector remains but is triggered by EventBridge Scheduler one-time schedules, not SQS from an Orchestrator.
+
 **Date**: 2026-05-17
 
 **Context**: The monolithic Collector Lambda blasts 128+ subnets in one 15-minute invocation, creating burst load on the Finney endpoint and risking timeout. Each subnet's data is independent.
@@ -547,7 +551,7 @@ EventBridge (hourly) → Orchestrator → Collection Queue (SQS)
 
 ## Decision 18: Independent Subnet Refresh over Batch Cycle
 
-> **Status**: Phase 2 Complete (self-scheduling loops live, Phase 3 pending: cleanup old resources)
+> **Status**: Fully Implemented (all phases complete, old batch resources removed)
 > **Full document**: `kb/architecture-decision-18-independent-refresh.md`
 
 **Context**: First live deployment proved the batch cycle model (daily, all-or-nothing) creates artificial coupling. One subnet failure blocks output for all 128 others.

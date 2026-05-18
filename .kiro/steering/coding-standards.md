@@ -94,7 +94,9 @@ lambda/src/
 ├── storage/
 │   └── storage_layer.py   # S3/local filesystem with compression
 ├── orchestrator/
-│   └── handler.py         # Orchestrator Lambda (discover + dispatch)
+│   └── handler.py         # ⚠️ Legacy Orchestrator Lambda (kept for reference)
+├── discovery/
+│   └── handler.py         # Discovery Lambda (hourly safety net)
 ├── subnet_collector/
 │   └── handler.py         # SubnetCollector Lambda (one subnet per invocation)
 ├── processor/

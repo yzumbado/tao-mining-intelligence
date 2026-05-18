@@ -1,5 +1,13 @@
 # Post-First-Run Improvement Plan
 
+> **Status: ALL RESOLVED** — Issues addressed by Architecture Decision 18 (2026-05-17)
+>
+> - Problem 1 (cycle never completes): Eliminated — no batch cycle, rankings recompute after each subnet
+> - Problem 2 (timeout too short): Fixed in CDK (90s, 1024MB)
+> - Problem 3 (ROI=0): Fixed — alpha price collected per-subnet by SubnetCollector
+> - Problem 4 (no site generated): Fixed — Finalizer generates site after each subnet update
+> - Problem 5 (27 subnets failed validation): Fixed — validation relaxed to warn + quality flag, don't reject
+
 ## Problems Found During First Live Deployment (2026-05-17)
 
 ### Problem 1: Cycle Never Completes When Subnets Fail

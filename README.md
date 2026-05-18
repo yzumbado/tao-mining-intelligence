@@ -39,36 +39,39 @@ python scripts/validate_sdk.py
 ## Architecture
 
 ```
-EventBridge (daily 00:00 UTC)
-    │
-    ▼
-┌─────────────┐     SQS (per-subnet)     ┌─────────────────┐     SQS          ┌─────────────┐
-│ Orchestrator │ ──────────────────────▶  │ SubnetCollector  │ ──────────────▶  │  Processor   │
-│ (discover +  │                          │ (1 subnet each,  │                  │  Lambda      │
-│  dispatch)   │                          │  concurrency=2)  │                  │              │
-└─────────────┘                          └─────────────────┘                  └──────┬───────┘
-                                              │                                       │
-                                              ▼                                       ▼
-                                         S3: raw snapshots                     S3: derived metrics
-                                                                               DynamoDB: profiles
-                                                                                      │
-                                                                               SNS (completion)
-                                                                                      │
-                                                                                      ▼
-                                                                              ┌─────────────┐
-                                                                              │  Finalizer   │
-                                                                              │  Lambda      │
-                                                                              └──────┬───────┘
-                                                                                     │
-                                                                                     ▼
-                                                                              S3: site + briefing
-                                                                              CloudFront → user
+Discovery Lambda (hourly safety net)
+    ├── Queries chain for active subnets
+    ├── Checks each subnet's processed_at for staleness
+    └── Creates EventBridge one-time schedules for new/stale subnets
+                │
+                ▼
+EventBridge Scheduler (one-time, per subnet, self-perpetuating)
+                │
+                ▼
+SubnetCollector Lambda (one subnet per invocation)
+    ├── Collects metagraph, hyperparams, alpha price, reg cost
+    ├── Validates (warn on quality issues, don't reject)
+    ├── Stores raw snapshot to S3
+    └── Sends SQS message → Processing Queue
+                │
+                ▼
+Processor Lambda (one subnet per invocation)
+    ├── Computes metrics (pure functions)
+    ├── Stores derived metrics to S3, profiles to DynamoDB
+    ├── Invokes Finalizer (async) → rankings recompute
+    └── Creates next EventBridge schedule (tempo-based, self-perpetuating)
+                │
+                ▼
+Finalizer Lambda (aggregator, invoked after each subnet)
+    ├── Reads ALL current profiles from DynamoDB
+    ├── Generates rankings + daily briefing
+    └── Generates HTML site → S3 → CloudFront
 ```
 
 - **Compute**: AWS Lambda (Container Image) — Bittensor SDK too large for zip deployment
-- **Orchestration**: SQS/SNS (not Step Functions — exceeds free tier)
+- **Orchestration**: Self-scheduling loops via EventBridge Scheduler one-time schedules
 - **Storage**: S3 (private data) + S3 (CloudFront site) + DynamoDB (state/metrics)
-- **Scheduling**: EventBridge Scheduler (daily 00:00 UTC)
+- **Scheduling**: Discovery Lambda (hourly) + per-subnet self-scheduling (tempo-based)
 - **Site**: Jinja2 + Tailwind CSS (dark theme) via CloudFront
 - **Cost**: $0/month (all AWS free tier)
 
@@ -82,9 +85,11 @@ EventBridge (daily 00:00 UTC)
 ├── lambda/
 │   ├── src/                  # Application code
 │   │   ├── models/           # Pydantic data models
-│   │   ├── processor/        # Metrics engine
-│   │   ├── collector/        # Collection Lambda handler
-│   │   ├── finalizer/        # Finalization Lambda handler
+│   │   ├── processor/        # Metrics engine + handler
+│   │   ├── discovery/        # Discovery Lambda (hourly safety net)
+│   │   ├── subnet_collector/ # SubnetCollector Lambda (per-subnet)
+│   │   ├── collector/        # Legacy monolithic collector (reference)
+│   │   ├── finalizer/        # Finalizer Lambda (aggregator)
 │   │   ├── state/            # DynamoDB state manager
 │   │   ├── storage/          # S3/local storage layer
 │   │   └── site_generator/   # HTML site generation

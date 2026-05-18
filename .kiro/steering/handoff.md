@@ -25,7 +25,7 @@ inclusion: always
 
 ## Project Overview
 
-An automated pipeline that collects Bittensor subnet data daily, computes mining/validating intelligence metrics, and serves structured data to Kiro for TAO accumulation strategy decisions.
+An automated pipeline that continuously collects Bittensor subnet data, computes mining/validating intelligence metrics, and serves structured data to Kiro for TAO accumulation strategy decisions.
 
 **Primary goal**: Accumulate TAO through mining or validating — not USD conversion.
 
@@ -76,9 +76,6 @@ Aggregator Lambda (invoked after each subnet completes)
     ├── Generates daily briefing (rolling 24h changes)
     └── Stores rankings + briefing to S3
 ```
-
-**Note**: Old batch path (Orchestrator → SQS → SNS → Finalizer gate) still exists
-in CDK for backward compatibility. Phase 3 will remove it.
 
 ## Reference Implementation: Collector Lambda
 
@@ -137,7 +134,9 @@ lambda/src/
 ├── storage/
 │   └── storage_layer.py   # S3/local filesystem with compression
 ├── orchestrator/
-│   └── handler.py         # ✅ Orchestrator Lambda (discover + dispatch)
+│   └── handler.py         # ⚠️ Legacy Orchestrator Lambda (kept for reference)
+├── discovery/
+│   └── handler.py         # ✅ Discovery Lambda (hourly safety net)
 ├── subnet_collector/
 │   └── handler.py         # ✅ SubnetCollector Lambda (one subnet per invocation)
 ├── collector/
@@ -159,10 +158,10 @@ lambda/src/
 - CloudFront URL: `https://dkfh19zkgqq18.cloudfront.net`
 - All resources within free tier ($0/month validated)
 
-### Architecture Decision 18: Independent Subnet Refresh (APPROVED)
-- Phase 1 foundation committed (configurable refresh policy, timestamps, relaxed validation)
-- Phase 2 complete: self-scheduling loops, Discovery Lambda, Aggregator invocation
-- Phase 3 pending: Remove old resources (Orchestrator, SNS, completion queue), llms.txt, metadata.json, staleness alarm, documentation overhaul
+### Architecture Decision 18: Independent Subnet Refresh (FULLY IMPLEMENTED)
+- All phases complete: self-scheduling loops, Discovery Lambda, Aggregator invocation, documentation overhaul
+- Old batch resources removed from CDK (Orchestrator, SNS, completion queue)
+- llms.txt, metadata.json, staleness alarm all deployed
 - See `kb/architecture-decision-18-independent-refresh.md` for full design
 
 ### Completed:
@@ -258,24 +257,6 @@ waste time on them.
 - **Review after implementation** — found 7 critical bugs in the "working" code by asking "what are tests hiding?"
 - **Field name alignment matters** — Collector output field names must match Processor input expectations exactly
 - **Error propagation over swallowing** — StateManager now raises on throttling so SQS retries work
-
-## Known Deployment Blocker (MUST FIX BEFORE `cdk deploy`)
-
-**Docker import path mismatch** — the pipeline will NOT work in Lambda as-is:
-
-- Dockerfile: `COPY src/ ${LAMBDA_TASK_ROOT}/` → files land at `/var/task/orchestrator/handler.py`
-- CDK: `cmd=["src.orchestrator.handler.handle"]` → expects `/var/task/src/orchestrator/handler.py`
-- Source code: `from src.config import ...` → requires `src` package prefix on Python path
-
-**Why tests didn't catch it**: Tests add both `lambda/` and `lambda/src/` to sys.path, so both `from src.X` and `from X` resolve. In the container, only one path exists.
-
-**Fix**: Change Dockerfile to `COPY src/ ${LAMBDA_TASK_ROOT}/src/` (preserving the `src` prefix). This is the minimal fix — keeps all imports and CDK CMD values unchanged.
-
-**Verification**: After fixing, run:
-```bash
-docker build -t test-imports lambda/ && \
-docker run --rm test-imports python -c "from src.processor.handler import handle; print('OK')"
-```
 
 ## Lessons Learned (Testing Process)
 

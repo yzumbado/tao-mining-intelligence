@@ -49,10 +49,10 @@ pytest tests/ -q
 
 # 2. Verify Docker image builds and imports resolve
 docker build -t test-imports lambda/
-docker run --rm --entrypoint python test-imports -c "from src.orchestrator.handler import handle; print('OK')"
+docker run --rm --entrypoint python test-imports -c "from src.discovery.handler import handle; print('OK')"
+docker run --rm --entrypoint python test-imports -c "from src.subnet_collector.handler import handle; print('OK')"
 docker run --rm --entrypoint python test-imports -c "from src.processor.handler import handle; print('OK')"
 docker run --rm --entrypoint python test-imports -c "from src.finalizer.handler import handle; print('OK')"
-docker run --rm --entrypoint python test-imports -c "from src.subnet_collector.handler import handle; print('OK')"
 
 # 3. Bootstrap CDK (one-time per account/region)
 AWS_PROFILE=tao cdk bootstrap aws://<ACCOUNT_ID>/us-east-1
@@ -89,10 +89,10 @@ aws lambda list-functions --profile tao --region us-east-1 \
   --output table
 
 # Expected:
-# tao-orchestrator      (60s timeout)
-# tao-subnet-collector  (90s timeout, 1024MB)
-# tao-processor         (900s timeout)
-# tao-finalizer         (300s timeout)
+# tao-discovery          (60s timeout)
+# tao-subnet-collector   (90s timeout, 1024MB)
+# tao-processor          (900s timeout)
+# tao-finalizer          (300s timeout)
 ```
 
 ```bash
@@ -109,24 +109,24 @@ aws s3 ls --profile tao | grep tao-intelligence
 ```
 
 ```bash
-# SQS queues (6: 3 main + 3 DLQ)
+# SQS queues (2: processing queue + DLQ)
 aws sqs list-queues --profile tao --region us-east-1 \
   --queue-name-prefix tao --query "QueueUrls | length(@)" --output text
-# Expected: 6
+# Expected: 2
 ```
 
 ```bash
-# EventBridge rule is ENABLED
+# EventBridge rule is ENABLED (hourly Discovery)
 aws events list-rules --profile tao --region us-east-1 \
   --name-prefix tao --query "Rules[].{Name:Name,State:State}" --output table
-# Expected: tao-daily-collection | ENABLED
+# Expected: tao-hourly-discovery | ENABLED
 ```
 
 ```bash
 # CloudWatch alarms are OK (not in ALARM state)
 aws cloudwatch describe-alarms --profile tao --region us-east-1 \
-  --alarm-name-prefix tao --query "MetricAlarms[].{Name:AlarmName,State:StateValue}" --output table
-# Expected: All 3 alarms in OK state
+  --alarm-name-prefix Tao --query "MetricAlarms[].{Name:AlarmName,State:StateValue}" --output table
+# Expected: All alarms in OK state (including TaoPipeline/StaleSubnets)
 ```
 
 ### ✅ CloudFront is accessible
@@ -135,7 +135,7 @@ aws cloudwatch describe-alarms --profile tao --region us-east-1 \
 # Get distribution URL
 aws cloudfront list-distributions --profile tao --region us-east-1 \
   --query "DistributionList.Items[0].DomainName" --output text
-# Visit https://<domain> — will show 403 until first pipeline run generates site
+# Visit https://dkfh19zkgqq18.cloudfront.net
 ```
 
 ## First Pipeline Run
@@ -144,37 +144,39 @@ aws cloudfront list-distributions --profile tao --region us-east-1 \
 
 ```bash
 aws lambda invoke --profile tao --region us-east-1 \
-  --function-name tao-orchestrator \
+  --function-name tao-discovery \
   --payload '{}' \
-  /tmp/orchestrator-response.json && cat /tmp/orchestrator-response.json
+  /tmp/discovery-response.json && cat /tmp/discovery-response.json
 ```
 
 ### Expected flow
 
 ```
-tao-orchestrator (discovers active subnets)
-    → sends 1 SQS message per subnet to tao-collection queue
-        → tao-subnet-collector (collects metagraph for each subnet)
+tao-discovery (discovers active subnets, checks staleness)
+    → creates one-time EventBridge schedule per subnet
+        → tao-subnet-collector (collects metagraph for one subnet)
             → stores raw snapshot to S3
             → sends message to tao-process-subnet queue
                 → tao-processor (computes metrics)
                     → stores derived metrics to S3
                     → writes profiles to DynamoDB
-                    → publishes to SNS topic
-                        → tao-completion-tracker queue
-                            → tao-finalizer (when all subnets complete)
-                                → generates rankings + briefing
-                                → generates HTML site
-                                → uploads to site bucket
+                    → invokes tao-finalizer (async)
+                    → creates next one-time schedule (now + tempo)
+                        → loop continues indefinitely
+                            → tao-finalizer (recomputes rankings from all profiles)
+                                → generates rankings + briefing + HTML site
+                                → uploads to site bucket → CloudFront
 ```
+
+After the first Discovery invocation, subnets become self-scheduling. Each subnet creates its own next schedule after processing. Discovery only re-seeds subnets that stop self-scheduling.
 
 ### Monitor execution
 
 ```bash
-# Watch orchestrator logs
-aws logs tail /aws/lambda/tao-orchestrator --profile tao --region us-east-1 --follow
+# Watch Discovery logs
+aws logs tail /aws/lambda/tao-discovery --profile tao --region us-east-1 --follow
 
-# Watch collector logs
+# Watch collector logs (high volume — one invocation per subnet)
 aws logs tail /aws/lambda/tao-subnet-collector --profile tao --region us-east-1 --follow
 
 # Watch processor logs
@@ -182,91 +184,149 @@ aws logs tail /aws/lambda/tao-processor --profile tao --region us-east-1 --follo
 
 # Watch finalizer logs
 aws logs tail /aws/lambda/tao-finalizer --profile tao --region us-east-1 --follow
+
+# Check active EventBridge schedules (self-scheduling loops)
+aws scheduler list-schedules --profile tao --region us-east-1 \
+  --query "Schedules | length(@)" --output text
+# Expected: 100+ (one per actively self-scheduling subnet)
 ```
 
 ### Verify pipeline completed
 
 ```bash
-# Check DynamoDB for cycle status
-aws dynamodb get-item --profile tao --region us-east-1 \
-  --table-name tao-pipeline \
-  --key '{"PK": {"S": "CYCLE#2026-05-17"}, "SK": {"S": "STATUS"}}' \
-  --query "Item.{status:status.S,complete:subnets_complete.N,total:subnets_total.N}" \
-  --output table
-
 # Check S3 for outputs
-aws s3 ls --profile tao s3://tao-intelligence-651484323929/derived/ --recursive
+aws s3 ls --profile tao s3://tao-intelligence-651484323929/derived/ --recursive | tail -5
 
 # Check site was generated
 aws s3 ls --profile tao s3://tao-intelligence-site-651484323929/site/
+
+# Check rankings exist
+aws s3 cp --profile tao s3://tao-intelligence-site-651484323929/site/data/rankings.json - | python -m json.tool | head -20
 ```
+
+## System Health Check
+
+Run these commands to verify the autonomous system is operating correctly:
+
+```bash
+# 1. How many subnets are self-scheduling?
+aws scheduler list-schedules --profile tao --region us-east-1 \
+  --query "Schedules | length(@)" --output text
+# Expected: 100+ (should match active subnet count)
+
+# 2. Is the staleness alarm OK?
+aws cloudwatch describe-alarms --profile tao --region us-east-1 \
+  --alarm-names "TaoPipeline/StaleSubnets" \
+  --query "MetricAlarms[0].StateValue" --output text
+# Expected: OK
+
+# 3. Any messages in DLQ?
+aws sqs get-queue-attributes --profile tao --region us-east-1 \
+  --queue-url "https://sqs.us-east-1.amazonaws.com/651484323929/tao-process-subnet-dlq" \
+  --attribute-names ApproximateNumberOfMessages \
+  --query "Attributes.ApproximateNumberOfMessages" --output text
+# Expected: 0
+
+# 4. When was the site last updated?
+aws s3api head-object --profile tao --region us-east-1 \
+  --bucket tao-intelligence-site-651484323929 --key site/index.html \
+  --query "LastModified" --output text
+# Expected: within last 4 hours
+
+# 5. Recent Discovery Lambda invocations (should be hourly)
+aws logs filter-log-events --profile tao --region us-east-1 \
+  --log-group-name /aws/lambda/tao-discovery \
+  --start-time $(date -v-6H +%s000) \
+  --filter-pattern "subnets_seeded" \
+  --query "events[].message" --output text | tail -5
+```
+
+## Daily Operations
+
+The pipeline is **fully autonomous**. No manual intervention needed.
+
+- **Discovery Lambda** runs hourly, detects new subnets and re-seeds stale loops
+- **Self-scheduling loops** keep each subnet refreshing at its tempo cadence (20-240 min)
+- **Finalizer** recomputes rankings after each subnet update (~780 times/day)
+- **Staleness alarm** fires if any subnet exceeds `max_staleness_hours` (default: 4h)
+
+**When to intervene**:
+1. **Staleness alarm fires** → Check if Discovery is running, check DLQ, check Lambda errors
+2. **DLQ has messages** → Inspect messages, fix root cause, redrive
+3. **Site not updating** → Check Finalizer logs, verify profiles exist in DynamoDB
 
 ## Troubleshooting
 
-### Pipeline didn't run
+### Subnet loop died (not self-scheduling)
 
-1. Check EventBridge rule is ENABLED
-2. Check orchestrator CloudWatch logs for errors
-3. Verify DynamoDB table has no stale cycle record blocking idempotency
+1. Check if the subnet's schedule exists:
+   ```bash
+   aws scheduler list-schedules --profile tao --region us-east-1 \
+     --query "Schedules[?contains(Name, 'subnet-<NETUID>')].{Name:Name,State:State}" --output table
+   ```
+2. If missing, Discovery will re-seed it within 1 hour. To force immediately:
+   ```bash
+   aws lambda invoke --profile tao --region us-east-1 \
+     --function-name tao-discovery --payload '{}' /tmp/out.json
+   ```
+3. Check Processor logs for the subnet — the schedule creation may have failed:
+   ```bash
+   aws logs filter-log-events --profile tao --region us-east-1 \
+     --log-group-name /aws/lambda/tao-processor \
+     --filter-pattern "netuid=<NETUID> schedule" \
+     --start-time $(date -v-4H +%s000)
+   ```
+
+### Staleness alarm in ALARM state
+
+```bash
+# Check which subnets are stale
+aws s3 cp --profile tao s3://tao-intelligence-site-651484323929/site/data/metadata.json - \
+  | python -c "import json,sys; d=json.load(sys.stdin); [print(f'SN{k}: {v[\"processed_at\"]}') for k,v in d.items() if 'processed_at' in v]" \
+  | sort -t: -k2 | head -10
+```
 
 ### Messages in DLQ
 
 ```bash
 # Check DLQ message count
-for q in tao-collection-dlq tao-process-subnet-dlq tao-completion-tracker-dlq; do
-  echo -n "$q: "
-  aws sqs get-queue-attributes --profile tao --region us-east-1 \
-    --queue-url "https://sqs.us-east-1.amazonaws.com/651484323929/$q" \
-    --attribute-names ApproximateNumberOfMessages \
-    --query "Attributes.ApproximateNumberOfMessages" --output text
-done
-```
+aws sqs get-queue-attributes --profile tao --region us-east-1 \
+  --queue-url "https://sqs.us-east-1.amazonaws.com/651484323929/tao-process-subnet-dlq" \
+  --attribute-names ApproximateNumberOfMessages \
+  --query "Attributes.ApproximateNumberOfMessages" --output text
 
-### Lambda timeout
-
-- Orchestrator (60s): Bittensor chain may be slow — check circuit breaker logs
-- SubnetCollector (60s): Single subnet metagraph fetch — usually 3-5s
-- Processor (15min): Should complete in <30s per subnet — if timing out, check S3 read errors
-- Finalizer (5min): Site generation — check if all subnets completed
-
-### Redrive DLQ messages
-
-```bash
-# Move messages from DLQ back to main queue for retry
+# Redrive DLQ messages back to main queue
 aws sqs start-message-move-task --profile tao --region us-east-1 \
   --source-arn "arn:aws:sqs:us-east-1:651484323929:tao-process-subnet-dlq" \
   --destination-arn "arn:aws:sqs:us-east-1:651484323929:tao-process-subnet"
 ```
 
-### Reset a stuck cycle
+### Lambda timeout
 
-```bash
-# Delete the cycle record to allow re-run
-aws dynamodb delete-item --profile tao --region us-east-1 \
-  --table-name tao-pipeline \
-  --key '{"PK": {"S": "CYCLE#2026-05-17"}, "SK": {"S": "STATUS"}}'
-# Then re-invoke orchestrator
-```
+- Discovery (60s): Chain query slow — check circuit breaker logs
+- SubnetCollector (90s): Single subnet metagraph fetch — usually 3-5s, check chain health
+- Processor (15min): Should complete in <30s per subnet — if timing out, check S3 read errors
+- Finalizer (5min): Site generation — check if DynamoDB scan is slow (many profiles)
 
-## Daily Operations
+### Pipeline not producing output
 
-The pipeline runs automatically at 00:00 UTC daily via EventBridge. No manual intervention needed unless:
-
-1. **DLQ alarm fires** → Check logs, redrive or fix
-2. **Site not updated** → Check finalizer logs, verify cycle completed
-3. **Data looks wrong** → Check raw snapshots in S3, compare with `python scripts/validate_fields.py`
+1. Check Discovery is running: `aws logs tail /aws/lambda/tao-discovery --since 2h`
+2. Check schedules exist: `aws scheduler list-schedules --query "Schedules | length(@)"`
+3. Check processing queue: `aws sqs get-queue-attributes` on `tao-process-subnet`
+4. Check Finalizer invocations: `aws logs tail /aws/lambda/tao-finalizer --since 2h`
 
 ## Cost
 
 All resources are within AWS free tier:
-- Lambda: ~30 invocations/day × 4 functions = ~120 requests (free: 1M/month)
-- DynamoDB: ~100 writes/day (free: 25 WCU)
+- Lambda: ~1000 invocations/day (free: 1M/month)
+- DynamoDB: ~500 writes/day (free: 25 WCU)
 - S3: ~50MB/month growth (free: 5GB)
-- SQS: ~300 messages/day (free: 1M/month)
-- CloudFront: ~10 requests/day (free: 10M/month)
-- CloudWatch: 3 alarms (free: 10)
+- SQS: ~500 messages/day (free: 1M/month)
+- EventBridge Scheduler: ~23K schedules/month ($0.02/month)
+- CloudFront: ~100 requests/day (free: 10M/month)
+- CloudWatch: 2 alarms (free: 10)
 
-**Expected monthly cost: $0.00**
+**Expected monthly cost: $0.00** (EventBridge Scheduler rounds to $0)
 
 ## Key Configuration
 
@@ -287,6 +347,14 @@ aws dynamodb put-item --profile tao --region us-east-1 \
   --item '{"PK":{"S":"CONFIG"},"SK":{"S":"TRACKED_HOTKEYS"},"hotkeys":{"L":[{"S":"5YourHotkeyHere..."}]}}'
 ```
 
+### Adjust refresh policy
+
+```bash
+aws dynamodb put-item --profile tao --region us-east-1 \
+  --table-name tao-pipeline \
+  --item '{"PK":{"S":"CONFIG"},"SK":{"S":"REFRESH_POLICY"},"max_staleness_hours":{"N":"4"},"min_refresh_interval_minutes":{"N":"15"},"discovery_cadence_minutes":{"N":"60"}}'
+```
+
 ## Deployment Lessons Learned
 
 1. **Always run Docker import smoke test before deploying** — `pytest` passing doesn't guarantee Lambda can find handlers
@@ -299,3 +367,4 @@ aws dynamodb put-item --profile tao --region us-east-1 \
 8. **HOME=/tmp is mandatory** — Bittensor SDK tries to create `~/.bittensor/wallets/` on import; Lambda's default HOME is read-only
 9. **lambda_patch.py must load before bittensor** — patches multiprocessing.Queue (needs /dev/shm which Lambda lacks); loaded via `src/__init__.py` when `PIPELINE_ENV=aws`
 10. **Validation must be relaxed for real-world data** — 27/129 subnets have non-standard incentive distributions; hard rejection blocks the entire pipeline
+11. **Self-scheduling is self-healing** — if a loop dies, Discovery re-seeds it within 1 hour; no manual intervention needed
