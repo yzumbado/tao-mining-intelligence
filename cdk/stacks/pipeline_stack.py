@@ -161,27 +161,7 @@ class TaoPipelineStack(Stack):
         import os
         lambda_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "lambda")
 
-        orchestrator_fn = _lambda.DockerImageFunction(
-            self, "OrchestratorLambda",
-            function_name="tao-orchestrator",
-            code=_lambda.DockerImageCode.from_image_asset(
-                directory=lambda_dir,
-                cmd=["src.orchestrator.handler.handle"],
-                platform=ecr_assets.Platform.LINUX_ARM64,
-            ),
-            architecture=_lambda.Architecture.ARM_64,
-            memory_size=256,
-            timeout=Duration.seconds(60),
-            environment={
-                "PIPELINE_ENV": "aws",
-                "HOME": "/tmp",
-                "TABLE_NAME": table.table_name,
-                "BUCKET_NAME": data_bucket.bucket_name,
-                "COLLECTION_QUEUE_URL": collection_queue.queue_url,
-            },
-            log_group=logs.LogGroup(self, "OrchestratorLogs",
-                                    retention=logs.RetentionDays.ONE_MONTH),
-        )
+        # Orchestrator REMOVED — replaced by Discovery Lambda (AD18)
 
         subnet_collector_fn = _lambda.DockerImageFunction(
             self, "SubnetCollectorLambda",
@@ -253,17 +233,15 @@ class TaoPipelineStack(Stack):
         # =====================================================================
         # Event Sources: SQS → Lambda
         # =====================================================================
-        subnet_collector_fn.add_event_source(
-            lambda_events.SqsEventSource(collection_queue, batch_size=1)
-        )
+        # SubnetCollector: invoked directly by EventBridge Scheduler (AD18)
+        # Collection queue event source REMOVED — no longer needed
 
         processor_fn.add_event_source(
             lambda_events.SqsEventSource(process_queue, batch_size=1)
         )
 
-        finalizer_fn.add_event_source(
-            lambda_events.SqsEventSource(completion_queue, batch_size=10)
-        )
+        # Finalizer/Aggregator: invoked directly by Processor (AD18)
+        # Completion queue event source REMOVED — no longer needed
 
         # =====================================================================
         # Scheduling: EventBridge
@@ -285,12 +263,7 @@ class TaoPipelineStack(Stack):
             },
         )
 
-        events.Rule(
-            self, "DailyTrigger",
-            rule_name="tao-daily-collection",
-            schedule=events.Schedule.cron(minute="0", hour="0"),
-            targets=[targets.LambdaFunction(orchestrator_fn)],
-        )
+        # DailyTrigger REMOVED — replaced by hourly Discovery Lambda (AD18)
 
         # Discovery Lambda: hourly safety net for independent refresh (AD18)
         discovery_fn = _lambda.DockerImageFunction(
@@ -334,7 +307,6 @@ class TaoPipelineStack(Stack):
         # =====================================================================
         # IAM: Least Privilege
         # =====================================================================
-        table.grant_read_write_data(orchestrator_fn)
         table.grant_read_write_data(subnet_collector_fn)
         table.grant_read_write_data(processor_fn)
         table.grant_read_write_data(finalizer_fn)
@@ -346,7 +318,6 @@ class TaoPipelineStack(Stack):
 
         site_bucket.grant_put(finalizer_fn)
 
-        collection_queue.grant_send_messages(orchestrator_fn)
         process_queue.grant_send_messages(subnet_collector_fn)
         subnet_processed_topic.grant_publish(processor_fn)
 

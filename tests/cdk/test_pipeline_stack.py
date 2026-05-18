@@ -30,10 +30,10 @@ def _get_template() -> Template:
 class TestLambdaConfiguration:
     """Assert Lambda functions are configured correctly."""
 
-    def test_orchestrator_timeout_60_seconds(self):
+    def test_discovery_lambda_exists(self):
         template = _get_template()
         template.has_resource_properties("AWS::Lambda::Function", {
-            "FunctionName": "tao-orchestrator",
+            "FunctionName": "tao-discovery",
             "Timeout": 60,
             "MemorySize": 256,
         })
@@ -96,10 +96,10 @@ class TestLambdaConfiguration:
 class TestEventBridge:
     """Assert EventBridge schedule is correct."""
 
-    def test_daily_schedule_at_midnight_utc(self):
+    def test_hourly_discovery_schedule(self):
         template = _get_template()
         template.has_resource_properties("AWS::Events::Rule", {
-            "ScheduleExpression": "cron(0 0 * * ? *)",
+            "ScheduleExpression": "rate(1 hour)",
         })
 
 
