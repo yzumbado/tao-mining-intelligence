@@ -356,3 +356,48 @@ and capital allocation, while the machine handles discovery, execution, and opti
 - Enough initial stake to be a credible validator (~1,000+ TAO)
 
 **Priority**: HIGH — this is potentially the business model for the entire project. The pipeline pays for itself by attracting delegated stake.
+
+
+---
+
+## Immediate Action Plan (Path to 1,000 TAO)
+
+**Starting capital**: 50 TAO + $50K USD (~242 TAO total)
+**Target**: 1,000 TAO (enough to run a credible Smart Validator)
+**Timeline**: 5-8 months
+
+### Phase A: Passive Income (This Week)
+- [ ] Stake 100 TAO on Root (SN0) as validator → passive yield
+- [ ] Monitor earnings via pipeline
+
+### Phase B: Research (Weeks 1-2)
+- [ ] Build Stage 2 (Subnet Researcher) — identify which subnets are winnable
+- [ ] Classify subnets: what hardware, what model, what difficulty
+- [ ] Identify 2-3 target subnets for mining with rented GPU
+- [ ] Estimate cost vs yield for each target
+
+### Phase C: Deploy First Miner (Month 2)
+- [ ] Rent GPU compute (~$30K budget = 3 months A100 spot)
+- [ ] Deploy miner on highest-confidence target subnet
+- [ ] Monitor for 7 days (immunity period)
+- [ ] If earning: continue. If not: pivot to next target.
+
+### Phase D: Compound & Scale (Months 3-6)
+- [ ] All earned TAO → re-stake on Root (compound)
+- [ ] Expand to 2nd subnet if first is profitable
+- [ ] Build TAO Flow analysis (wallet mapping, extraction scoring)
+- [ ] Publish transparency reports (build reputation)
+
+### Phase E: Launch Smart Validator (Month 6-8)
+- [ ] Reach 1,000 TAO threshold
+- [ ] Launch public validator with "only productive subnets" thesis
+- [ ] Publish methodology + live dashboard
+- [ ] Attract delegators through transparency and track record
+
+### Budget Allocation
+| Use | Amount | Purpose |
+|-----|--------|---------|
+| Root validation | 100 TAO | Passive income, zero risk |
+| Mining registration | 1 TAO | Subnet entry (multiple attempts) |
+| GPU compute | $30K | 3 months of mining operations |
+| Reserve | $20K + 141 TAO | Opportunities, emergencies, additional staking |
