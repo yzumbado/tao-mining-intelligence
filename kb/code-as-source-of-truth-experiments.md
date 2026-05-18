@@ -109,6 +109,109 @@ __stage_contract__ = {
 3. Express as the schema from Task 1.1
 4. Place at module level (after imports, before functions)
 
+**Pre-validated contract sketches** (from code review + POC):
+
+```python
+# discovery/handler.py
+__stage_contract__ = {
+    "name": "Discovery",
+    "description": "Hourly safety net — finds new/stale subnets and seeds their collection loops",
+    "trigger": {"type": "schedule", "source": "tao-hourly-discovery (EventBridge rule, every 1h)"},
+    "inputs": [
+        {"type": "dynamodb", "key": "SUBNET#*/PROFILE#basic", "description": "Check processed_at for staleness"},
+        {"type": "bittensor_chain", "call": "get_all_subnets()", "description": "Active subnet list"},
+    ],
+    "outputs": [
+        {"type": "eventbridge_schedule", "name": "tao-subnet-{netuid}", "mode": "one-time"},
+    ],
+    "env_vars": [],  # Uses config, not direct env vars
+    "timeout_seconds": 60,
+    "memory_mb": 512,
+}
+
+# subnet_collector/handler.py
+__stage_contract__ = {
+    "name": "SubnetCollector",
+    "description": "Collects metagraph + supplementary data for one subnet",
+    "trigger": {"type": "eventbridge_schedule", "source": "tao-subnet-{netuid} (one-time, self-deleting)"},
+    "inputs": [
+        {"type": "bittensor_chain", "call": "metagraph(netuid)", "description": "Full metagraph snapshot"},
+        {"type": "bittensor_chain", "call": "get_subnet_hyperparameters(netuid)"},
+        {"type": "bittensor_chain", "call": "get_subnet_price(netuid)"},
+        {"type": "bittensor_chain", "call": "get_registration_cost(netuid)"},
+    ],
+    "outputs": [
+        {"type": "s3", "path": "raw/metagraph/{date}/{netuid}.json"},
+        {"type": "s3", "path": "raw/alpha-prices/{date}/{netuid}.json"},
+        {"type": "s3", "path": "raw/hyperparameters/{date}/{netuid}.json"},
+        {"type": "s3", "path": "raw/registration-costs/{date}/{netuid}.json"},
+        {"type": "sqs", "queue": "tao-process-subnet", "description": "Triggers Processor"},
+    ],
+    "env_vars": ["PROCESS_QUEUE_URL"],
+    "timeout_seconds": 90,
+    "memory_mb": 1024,
+}
+
+# processor/handler.py
+__stage_contract__ = {
+    "name": "Processor",
+    "description": "Computes derived metrics from raw snapshot, writes profiles, triggers aggregation",
+    "trigger": {"type": "sqs", "source": "tao-process-subnet"},
+    "inputs": [
+        {"type": "s3", "path": "raw/metagraph/{date}/{netuid}.json", "required": True},
+        {"type": "s3", "path": "raw/alpha-prices/{date}/{netuid}.json", "required": False},
+        {"type": "s3", "path": "raw/hyperparameters/{date}/{netuid}.json", "required": False},
+        {"type": "s3", "path": "raw/registration-costs/{date}/{netuid}.json", "required": False},
+        {"type": "s3", "path": "raw/metagraph/{prev_date}/{netuid}.json", "required": False, "description": "Previous day for trend/churn"},
+    ],
+    "outputs": [
+        {"type": "s3", "path": "derived/metrics/{date}/{netuid}.json"},
+        {"type": "dynamodb", "key": "SUBNET#{netuid}/PROFILE#basic"},
+        {"type": "dynamodb", "key": "SUBNET#{netuid}/PROFILE#winner"},
+        {"type": "dynamodb", "key": "SUBNET#{netuid}/PROFILE#validator"},
+        {"type": "dynamodb", "key": "SUBNET#{netuid}/PROFILE#intelligence"},
+        {"type": "dynamodb", "key": "SUBNET#{netuid}/PROFILE#composability"},
+    ],
+    "invokes": [
+        {"type": "lambda", "function": "tao-finalizer", "mode": "async", "env_var": "AGGREGATOR_ARN"},
+    ],
+    "schedules": [
+        {"type": "eventbridge_schedule", "name": "tao-subnet-{netuid}", "mode": "one-time", "description": "Self-perpetuating loop"},
+    ],
+    "env_vars": ["AGGREGATOR_ARN", "SUBNET_COLLECTOR_ARN", "SCHEDULER_ROLE_ARN"],
+    "timeout_seconds": 900,
+    "memory_mb": 512,
+}
+
+# finalizer/handler.py
+__stage_contract__ = {
+    "name": "Finalizer",
+    "description": "Recomputes rankings and briefing from all current profiles, uploads to site",
+    "trigger": {"type": "lambda_invoke", "source": "Processor (async invocation)"},
+    "inputs": [
+        {"type": "s3", "path": "derived/metrics/{date}/{netuid}.json", "description": "All subnets for today"},
+        {"type": "dynamodb", "key": "CONFIG/PREVIOUS_ACTIVE_SUBNETS", "description": "For new subnet detection"},
+    ],
+    "outputs": [
+        {"type": "s3", "path": "derived/rankings/{date}.json"},
+        {"type": "s3", "path": "derived/briefings/{date}.json"},
+        {"type": "dynamodb", "key": "RANKING/LATEST"},
+        {"type": "dynamodb", "key": "BRIEFING/{date}"},
+        {"type": "s3_site", "path": "data/rankings.json", "bucket": "site"},
+        {"type": "s3_site", "path": "data/briefing.json", "bucket": "site"},
+        {"type": "s3_site", "path": "data/metadata.json", "bucket": "site"},
+        {"type": "s3_site", "path": "llms.txt", "bucket": "site"},
+    ],
+    "env_vars": ["SITE_BUCKET_NAME"],
+    "timeout_seconds": 300,
+    "memory_mb": 512,
+}
+```
+
+**Technical note for implementation**: Use `ast.literal_eval(node.value)` to parse
+the contract from source. POC validated this works with nested dicts/lists.
+See `scripts/generate_metrics_reference.py` for the AST walking pattern.
+
 **Validation**: For each handler, verify the contract matches reality by:
 - Checking every S3 read/write call in the code matches a declared input/output
 - Checking every boto3 client call matches a declared invoke/schedule
