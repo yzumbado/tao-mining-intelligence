@@ -1,6 +1,20 @@
 # TAO Mining Intelligence Pipeline
 
-Automated data collection and processing system for Bittensor subnet mining/validating intelligence. Evaluates both mining and validating opportunities across all subnets, recommending whichever path yields the highest net TAO return.
+Autonomous data collection and processing system for Bittensor subnet mining/validating intelligence. Evaluates both mining and validating opportunities across all 129 subnets, recommending whichever path yields the highest net TAO return.
+
+**Live data**: [`https://dkfh19zkgqq18.cloudfront.net/llms.txt`](https://dkfh19zkgqq18.cloudfront.net/llms.txt)
+
+**Vision**: 7-stage autonomous TAO accumulation machine. Currently at Stage 1 (COLLECT). See [`kb/product-vision-roadmap.md`](kb/product-vision-roadmap.md).
+
+## Sample Output
+
+```
+SN 0 | Score: 0.940 | 46.69 TAO/day | 30d: 1,400 TAO
+SN 4 | Score: 0.935 | 49.87 TAO/day | 30d: 1,496 TAO
+SN 1 | Score: 0.949 |  7.55 TAO/day | 30d:   227 TAO
+```
+
+Per-subnet intelligence includes: reward model (WTA/distributed), Gini coefficient, competitive density, deregistration risk, emission trends, validator landscape, taoflow health, and ROI estimates.
 
 ## Status
 
