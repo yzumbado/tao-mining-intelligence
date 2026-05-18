@@ -12,6 +12,28 @@ Implements all algorithms from the design document:
 - Competitive Density
 - Emission Trend
 - Validator Landscape
+
+METRICS DOCUMENTATION:
+    Each metric method contains a structured `Metric:` block in its docstring.
+    The living reference guide (kb/metrics-reference.md) is AUTO-GENERATED from
+    these blocks by running:
+
+        python scripts/generate_metrics_reference.py
+
+    When adding or modifying a metric, update the `Metric:` block in the docstring,
+    then re-run the generator. Do NOT edit kb/metrics-reference.md manually.
+
+    Metric block format:
+        Metric:
+            name: Human-readable metric name
+            status: PROVEN | HYPOTHESIS | NEEDS_VALIDATION | DEPRECATED
+            hypothesis: What this metric represents and why
+            usefulness_mining: How it helps mining decisions
+            usefulness_staking: How it helps staking decisions
+            usefulness_risk: How it helps risk management
+            output_range: Valid output values
+            known_issues: Any known problems or limitations
+            assumptions: Things that need validation
 """
 
 from __future__ import annotations
@@ -67,6 +89,35 @@ class MetricsEngine:
         2. Subnet occupancy (empty slots = 0.0 for all)
         3. Emission rank position (lower rank = higher risk)
         4. Registration queue pressure (more recent registrations = higher risk)
+
+        Metric:
+            name: Deregistration Risk
+            status: HYPOTHESIS
+            hypothesis: |
+                On a full subnet, the miner with the lowest emission is replaced when
+                a new registrant arrives. Queue pressure (recent registrations) indicates
+                how actively people are trying to enter. Bottom 25% face real risk;
+                top 75% are safe unless registration pressure is extreme.
+            formula: |
+                IF subnet has empty slots → risk = 0.0 for all
+                IF miner is immune → risk = 0.0
+                queue_pressure = min(recent_registrations_24h / 10, 1.0)
+                IF miner in bottom 25% by emission:
+                    base_risk = 1.0 - (rank / bottom_quartile_size)
+                    risk = base_risk × (0.5 + 0.5 × queue_pressure)
+                ELSE: risk = 0.1 × queue_pressure × (1.0 - rank / total_miners)
+            usefulness_mining: Tells you if entering a subnet is risky — high churn means you must be competitive immediately after immunity
+            usefulness_staking: Indirectly useful — high deregistration means competitive subnet (good for validators)
+            usefulness_risk: Track your own miner's risk score over time; exit before deregistration
+            output_range: "[0.0, 1.0] per miner"
+            known_issues: |
+                - Bottom 25% threshold may not be correct for all subnets
+                - Queue pressure cap of 10 registrations/day may be too low for popular subnets
+                - Not yet validated against actual deregistration events
+            assumptions: |
+                - Is the bottom 25% threshold correct?
+                - Does queue_pressure of 10/day represent max pressure?
+                - Is immunity period always respected by the chain?
 
         Args:
             neurons: All neurons in the subnet metagraph.
@@ -165,6 +216,24 @@ class MetricsEngine:
         Uses the O(n log n) sorted-array formula:
             G = (2 * sum((i+1) * x_i)) / (n * sum(x_i)) - (n+1)/n
 
+        Metric:
+            name: Gini Coefficient
+            status: PROVEN
+            hypothesis: |
+                Standard economics measure of inequality. Measures how concentrated
+                rewards are among miners. Gini 0.9+ means almost all emission goes to
+                a few miners (WTA). Gini 0.3 means rewards are spread relatively evenly.
+            formula: |
+                Given sorted positive emissions [x₁, x₂, ..., xₙ] (ascending):
+                G = (2 × Σᵢ (i+1)×xᵢ) / (n × Σxᵢ) - (n+1)/n
+                Edge cases: empty/all-zero → 0.0, single value → 0.0
+            usefulness_mining: High Gini = must be top-few or earn nothing. Low Gini = even mediocre miners earn.
+            usefulness_staking: High Gini subnets have more predictable top performers (stable for validators)
+            usefulness_risk: Primary input to Reward Distribution Model detection
+            output_range: "[0.0, 1.0] — 0 = equality, 1 = one miner gets everything"
+            known_issues: None — standard formula
+            assumptions: None — mathematically proven
+
         Returns:
             0.0 = perfect equality (all miners earn the same)
             1.0 = perfect inequality (one miner earns everything)
@@ -230,6 +299,34 @@ class MetricsEngine:
 
         Algorithm 3 from design document.
 
+        Metric:
+            name: Reward Distribution Model
+            status: HYPOTHESIS
+            hypothesis: |
+                Subnets fall into distinct reward patterns: WTA (top 3 capture >70%),
+                PROPORTIONAL (Gini < 0.5, all earn proportionally), TIERED (distinct
+                quality thresholds create step-function in emissions). Classification
+                determines what "winning" means on each subnet.
+            formula: |
+                top_3_share = sum(top 3 emissions) / sum(all emissions)
+                gini = compute_gini_coefficient(active_emissions)
+                IF top_3_share > 0.70 → WINNER_TAKES_ALL
+                ELIF gini < 0.5 → PROPORTIONAL
+                ELIF has_tiered_pattern (1-3 gaps with >50% drop) → TIERED
+                ELSE → UNKNOWN
+            usefulness_mining: Critical — on WTA you must be top-3 or earn nothing; on PROPORTIONAL even mediocre miners earn
+            usefulness_staking: WTA subnets have more predictable top performers → stable validator returns
+            usefulness_risk: Determines strategy — WTA requires excellence, PROPORTIONAL allows mediocrity
+            output_range: "Enum {WINNER_TAKES_ALL, PROPORTIONAL, TIERED, UNKNOWN} + gini + top_3_concentration"
+            known_issues: |
+                - 70% WTA threshold is an educated guess, not empirically derived
+                - Gini < 0.5 for PROPORTIONAL may be too generous
+                - Tiered pattern detection is heuristic (gap-based)
+            assumptions: |
+                - Is 70% the right WTA threshold?
+                - Is Gini < 0.5 the right PROPORTIONAL boundary?
+                - First live run confirmed 4/247 miners earn on SN1 — validates WTA detection
+
         Classification rules:
         - WINNER_TAKES_ALL: top 3 miners > 70% of total emission
         - PROPORTIONAL: Gini < 0.5
@@ -278,16 +375,32 @@ class MetricsEngine:
     ) -> float:
         """Estimate slippage for selling alpha tokens using constant product AMM.
 
+        Metric:
+            name: AMM Slippage Estimation
+            status: HYPOTHESIS
+            hypothesis: |
+                When selling alpha for TAO, the AMM pool moves against you. Larger sells
+                relative to pool size = more slippage. This is a CONSERVATIVE UPPER BOUND
+                because Bittensor also supports concentrated liquidity (Uniswap V3-style).
+            formula: |
+                pool_alpha = pool_tao / alpha_price
+                k = pool_tao × pool_alpha
+                new_pool_alpha = pool_alpha + sell_amount
+                actual_tao = pool_tao - (k / new_pool_alpha)
+                slippage = 1 - (actual_tao / (sell_amount × alpha_price))
+            usefulness_mining: "Can I actually realize this yield?" — high slippage means paper yield > real yield
+            usefulness_staking: Same — validator dividends in alpha need conversion to TAO
+            usefulness_risk: Subnets with thin pools are risky even if yield looks good
+            output_range: "[0.0, 1.0] — 0 = no slippage, 1 = cannot sell"
+            known_issues: |
+                - Conservative upper bound — real slippage may be lower with concentrated liquidity
+                - Doesn't account for multiple sells over time (pool recovers between trades)
+            assumptions: |
+                - Is constant-product the right model for Bittensor's base pool?
+                - How much does concentrated liquidity reduce actual slippage?
+
         For constant product AMM: x * y = k
         Slippage = 1 - (actual_output / expected_output)
-
-        NOTE: This provides a CONSERVATIVE UPPER BOUND on slippage. Bittensor's
-        base subnet pool uses constant product (x*y=k), but the network also
-        supports Uniswap V3-style concentrated liquidity positions that add depth
-        at specific price ranges. Actual slippage may be lower than this estimate
-        when concentrated liquidity is active near the current price. For risk
-        assessment purposes, the upper bound is preferred (we'd rather overestimate
-        slippage than underestimate).
 
         Args:
             sell_amount_alpha: Amount of alpha tokens to sell.
@@ -337,6 +450,34 @@ class MetricsEngine:
         """Compute net TAO yield and payback timeline for mining a subnet.
 
         Algorithm 4 from design document.
+
+        Metric:
+            name: ROI Estimation (Net TAO Yield)
+            status: HYPOTHESIS
+            hypothesis: |
+                If you register on this subnet and perform at the average earning miner
+                level, this is what you'd earn. The alpha→TAO conversion via the AMM pool
+                determines your real return. Averages across EARNING miners only (emission > 0)
+                to avoid dilution by zero-earners on WTA subnets.
+            formula: |
+                miner_emissions = [n.emission for n if n.incentive > 0]  # already daily
+                avg_daily_alpha = sum(miner_emissions) / len(miner_emissions)
+                net_tao_yield_per_day = avg_daily_alpha × alpha_tao_price
+                days_to_recoup = registration_cost_tao / net_tao_yield_per_day
+                thirty_day_projection = (net_tao_yield × 30) - registration_cost
+            usefulness_mining: Primary decision metric — "is this subnet worth entering?"
+            usefulness_staking: The validator variant (Metric 8) is the staking equivalent
+            usefulness_risk: days_to_recoup tells you how long your capital is at risk
+            output_range: "net_tao_yield: [0, ∞) TAO/day; days_to_recoup: [0, ∞]; thirty_day: (-∞, ∞) TAO"
+            known_issues: |
+                - Average emission is misleading on WTA subnets (most earn 0, avg pulled up by top)
+                - No adjustment for YOUR likely rank position — assumes you'd be average
+                - Slippage estimate is conservative upper bound (ignores concentrated liquidity)
+            assumptions: |
+                - Does averaging across earning miners give a realistic estimate?
+                - Should we use median instead of mean for WTA subnets?
+                - Is constant-product AMM slippage model accurate for Bittensor pools?
+                - Is 5% over 7 days the right hold-vs-swap threshold?
 
         Core formula:
         - net_tao_yield_per_day = avg_daily_alpha_emission_per_miner x alpha_tao_price
@@ -431,6 +572,33 @@ class MetricsEngine:
 
         Algorithm 5 from design document.
 
+        Metric:
+            name: Taoflow Health
+            status: NEEDS_VALIDATION
+            hypothesis: |
+                Under Bittensor's Taoflow model, subnets compete for stake. When stakers
+                leave (negative flow), emission share decreases, causing more stakers to
+                leave → death spiral. 3+ consecutive negative days = warning. 7+ days with
+                >25% emission decline = critical.
+            formula: |
+                daily_flows = [stake[i] - stake[i-1] for each day]
+                consecutive_negative = count from most recent backward
+                IF consecutive_negative >= 7 AND emission declined > 25%: DEATH_SPIRAL_RISK
+                ELIF consecutive_negative >= 3: DECLINING
+                ELSE: HEALTHY
+            usefulness_mining: Don't enter a dying subnet — registration cost is wasted if emission drops to zero
+            usefulness_staking: CRITICAL — primary risk signal for validators. Death spiral = staked TAO earns less and less
+            usefulness_risk: Detect declining subnets early → exit before the crowd
+            output_range: "Enum {HEALTHY, DECLINING, DEATH_SPIRAL_RISK}"
+            known_issues: |
+                - CURRENTLY DORMANT — always returns HEALTHY because we don't accumulate stake history yet
+                - Needs 7+ days of history before becoming meaningful
+                - Passes empty lists ([], []) in production
+            assumptions: |
+                - Is 3 days the right threshold for DECLINING?
+                - Is 25% emission decline the right threshold for DEATH_SPIRAL?
+                - To activate: accumulate daily total_validator_stake and total_emission per subnet
+
         Rules:
         - "healthy": fewer than 3 consecutive negative staking flow days
         - "declining": net staking flow negative for 3-6 consecutive days
@@ -508,6 +676,32 @@ class MetricsEngine:
         """Determine if renting cloud GPUs to mine is profitable.
 
         Algorithm 6 from design document.
+
+        Metric:
+            name: Rental Profitability
+            status: HYPOTHESIS
+            hypothesis: |
+                Mining is only worth it if rent_vs_buy_multiplier > 1.0 — meaning you earn
+                more TAO by mining than you could buy with the same money spent on GPU rental.
+                This accounts for the opportunity cost of renting.
+            formula: |
+                daily_rental_cost = cheapest_viable_gpu_hourly × 24
+                daily_tao_value_usd = net_tao_yield × tao_usd_price
+                daily_profit_usd = daily_tao_value_usd - daily_rental_cost
+                rent_vs_buy = net_tao_yield / (daily_rental_cost / tao_usd_price)
+                break_even_tao_price = daily_rental_cost / net_tao_yield
+            usefulness_mining: THE decision metric for "should I rent a GPU to mine this subnet?"
+            usefulness_staking: Not directly relevant (validators don't need GPUs)
+            usefulness_risk: break_even_tao_price tells you how far TAO can drop before mining is unprofitable
+            output_range: "rental_profitable: bool; rent_vs_buy_multiplier: [0, ∞)"
+            known_issues: |
+                - NOT CALLED IN PRODUCTION — requires hardware_tier from Stage 2 and cloud_pricing from external APIs
+                - Hardware tier mapping is static (hardcoded GPU configs per tier)
+                - Doesn't account for setup time, bandwidth costs, or spot instance interruptions
+            assumptions: |
+                - Are the tier-to-GPU mappings correct?
+                - Which cloud providers should be included? (RunPod, Vast.ai, Lambda Labs, AWS spot)
+                - How to keep pricing current?
 
         Core metrics:
         - daily_profit_usd = (net_tao_yield x tao_usd) - daily_rental_cost
@@ -605,6 +799,33 @@ class MetricsEngine:
 
         Algorithm 7 from design document.
 
+        Metric:
+            name: Miner Churn
+            status: HYPOTHESIS
+            hypothesis: |
+                High churn = competitive subnet where weak miners get replaced quickly.
+                Low churn = stable subnet where incumbents are entrenched. The trend tells
+                you if competition is heating up or cooling down.
+            formula: |
+                new_miners = current_hotkeys - previous_hotkeys
+                departed_miners = previous_hotkeys - current_hotkeys
+                churn_rate = (|new| + |departed|) / |current|
+                avg_lifespan = mean(current_block - block_at_registration) for active
+                net_change_pct = (|new| - |departed|) / |current|
+                IF net_change_pct > 0.05 → INCREASING
+                ELIF < -0.05 → DECREASING
+                ELSE → STABLE
+            usefulness_mining: High churn + INCREASING = dangerous (deregistered fast). Low churn + STABLE = incumbents safe.
+            usefulness_staking: High churn means more registration fees burned → good for subnet economics
+            usefulness_risk: DECREASING competition = opportunity window to enter
+            output_range: "churn_rate: [0.0, 1.0]; trend: {INCREASING, STABLE, DECREASING}"
+            known_issues: |
+                - Requires previous-day snapshot for comparison (first day has no baseline)
+                - Doesn't distinguish voluntary exit from deregistration
+            assumptions: |
+                - Is 5% net change the right threshold for INCREASING/DECREASING?
+                - Should we weight by emission (losing a top miner vs losing a zero-earner)?
+
         churn_rate = (new_registrations + deregistrations) / total_miners
         avg_lifespan = mean(current_block - block_at_registration) for active miners
         trend: INCREASING if net change > +5%, DECREASING if < -5%, else STABLE
@@ -667,6 +888,31 @@ class MetricsEngine:
         alpha_tao_price: float,
     ) -> ValidatorLandscape:
         """Compute validator landscape analysis for a subnet.
+
+        Metric:
+            name: Validator Landscape
+            status: HYPOTHESIS
+            hypothesis: |
+                The validator landscape determines how competitive staking is. A concentrated
+                subnet (one whale validator with >50% stake) means small stakers earn
+                proportionally less. A distributed subnet means more equal opportunity.
+            formula: |
+                validators = [n for n if n.dividends > 0]
+                total_stake = sum(v.stake)
+                top_1_share = max(v.stake) / total_stake
+                top_3_share = sum(top 3 stakes) / total_stake
+                concentrated = top_1_share > 0.5
+                net_yield = avg(v.emission) × alpha_tao_price
+            usefulness_mining: Concentrated validators may have biased scoring (single point of failure)
+            usefulness_staking: Avoid concentrated subnets where one whale dominates dividends
+            usefulness_risk: If dominant validator leaves, subnet scoring could change dramatically
+            output_range: "active_validators: int; stake shares: [0, 1]; concentrated: bool"
+            known_issues: |
+                - avg_validator_activity_blocks always returns 0 (blocks_since_last_step is subnet-level, not per-neuron)
+                - net_yield uses average emission which may be skewed by inactive validators
+            assumptions: |
+                - Is 50% the right threshold for "concentrated"?
+                - Does concentration actually reduce small-staker returns linearly?
 
         Analyzes validator count, stake concentration, activity, and yield.
 
@@ -734,6 +980,35 @@ class MetricsEngine:
         """Assess validation as a TAO accumulation strategy.
 
         Algorithm 8 from design document.
+
+        Metric:
+            name: Validator Opportunity Assessment
+            status: HYPOTHESIS
+            hypothesis: |
+                Validators earn dividends proportional to their stake share. The minimum
+                effective stake tells you how much TAO you need to earn anything. The daily
+                ROI tells you the return rate on your capital. This is the KEY metric for
+                staking decisions.
+            formula: |
+                avg_emission = sum(v.emission) / len(validators)
+                net_tao_yield = avg_emission × alpha_tao_price
+                min_effective_stake = validators_by_dividends[10th percentile].stake
+                daily_roi = net_tao_yield / avg_stake
+                slots_available = max_validators - len(validators)
+                concentrated = max(v.stake) / total_stake > 0.5
+            usefulness_mining: Concentrated validators may have biased scoring
+            usefulness_staking: PRIMARY metric — directly answers "where should I stake my TAO?"
+            usefulness_risk: min_effective_stake tells you if your capital is sufficient
+            output_range: "viable: bool; net_tao_yield: TAO/day; daily_roi_percent: %"
+            known_issues: |
+                - Uses average emission which may be skewed
+                - Bottom 10% threshold for min_effective_stake is arbitrary
+                - Doesn't account for validator commission rates
+            assumptions: |
+                - Does avg_emission × alpha_price accurately predict validator earnings?
+                - Is bottom 10% the right minimum viable stake threshold?
+                - Does stake concentration affect returns linearly?
+                - Are there subnets where small validators earn disproportionately?
 
         Key metrics:
         - net_tao_yield_per_validator = avg_dividends x alpha_tao_price
@@ -805,6 +1080,29 @@ class MetricsEngine:
     def compute_competitive_density(neurons: list[Neuron]) -> float:
         """Compute competitive density as active miners / total miner emission.
 
+        Metric:
+            name: Competitive Density
+            status: NEEDS_VALIDATION
+            hypothesis: |
+                More miners competing for the same emission pool = harder to earn.
+                This ratio captures "miners per unit of emission" in a normalized way.
+            formula: |
+                miners = [n for n if n.incentive > 0 or not n.is_validator]
+                active_miners = count(active)
+                total_emission = sum(m.emission)
+                density = active_miners / (active_miners + total_emission)
+            usefulness_mining: High density = crowded, hard to stand out. Low density = less competition.
+            usefulness_staking: Indirectly useful — high competition may indicate a healthy subnet
+            usefulness_risk: Used as penalty factor in attractiveness score (weight 0.15)
+            output_range: "[0.0, 1.0] — higher = more competition"
+            known_issues: |
+                - Mixes units (count + alpha/day) — normalization hack, not principled
+                - 100 miners / 100 alpha has same density as 10 miners / 10 alpha but different dynamics
+                - Consider replacing with occupancy rate (active_miners / max_slots) or emission_per_miner
+            assumptions: |
+                - Is this formula meaningful or should we use a simpler alternative?
+                - Does this correlate with actual difficulty of earning on a subnet?
+
         A simple measure of how crowded the mining field is. Higher values
         indicate more competition for the same emission pool.
 
@@ -841,6 +1139,28 @@ class MetricsEngine:
         seven_day_emissions: Optional[list[float]] = None,
     ) -> EmissionTrend:
         """Compute day-over-day emission change for a subnet.
+
+        Metric:
+            name: Emission Trend
+            status: PROVEN
+            hypothesis: |
+                Emission trends indicate subnet health. Increasing emission = subnet is
+                gaining stake (Taoflow allocates more emission to subnets with more stake).
+                Declining = stakers are leaving.
+            formula: |
+                change_percent = (current - previous) / previous
+                IF change > 0.01 → "increasing"
+                ELIF change < -0.01 → "declining"
+                ELSE → "stable"
+                seven_day_trend = (day7 - day1) / day1  (when history available)
+            usefulness_mining: Enter subnets with increasing emission (growing pie). Avoid declining.
+            usefulness_staking: Same — increasing emission means your stake earns more over time
+            usefulness_risk: Used in attractiveness score (weight 0.10)
+            output_range: "direction: {increasing, stable, declining}; change_percent: (-∞, ∞)"
+            known_issues: None — simple day-over-day comparison
+            assumptions: |
+                - Is 1% the right threshold for "meaningful" change?
+                - Should we use exponential moving average instead of simple comparison?
 
         Args:
             current_total_emission: Current day's total emission in TAO.
