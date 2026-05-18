@@ -72,6 +72,9 @@ def handle(event: dict, context: Any) -> dict:
             if _create_schedule(netuid, delay):
                 seeded += 1
 
+        # Publish staleness metric to CloudWatch
+        _publish_staleness_metric(len(stale))
+
         ctx["new_subnets"] = len(new)
         ctx["stale_subnets"] = len(stale)
         ctx["seeded"] = seeded
@@ -120,6 +123,23 @@ def _is_stale(profile: dict, max_staleness_hours: float) -> bool:
         return age_hours > max_staleness_hours
     except (ValueError, TypeError):
         return True
+
+
+
+def _publish_staleness_metric(stale_count: int) -> None:
+    """Publish StaleSubnets metric to CloudWatch for alarming."""
+    try:
+        cw = boto3.client("cloudwatch", region_name=_config.region)
+        cw.put_metric_data(
+            Namespace="TaoPipeline",
+            MetricData=[{
+                "MetricName": "StaleSubnets",
+                "Value": stale_count,
+                "Unit": "Count",
+            }],
+        )
+    except Exception as e:
+        logger.warning(f"Failed to publish staleness metric: {e}")
 
 
 def _create_schedule(netuid: int, delay_seconds: int = 0) -> bool:

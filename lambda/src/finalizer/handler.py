@@ -112,6 +112,9 @@ def handle(event: dict, context: Any) -> dict:
         except Exception:
             pass  # Not critical in independent refresh model
 
+        # Upload agent-consumable files to site bucket (AD18)
+        _upload_agent_files(rankings, briefing, all_metrics, date)
+
         ctx["rankings_count"] = len(rankings)
         ctx["alerts_count"] = len(briefing.get("alerts", []))
 
@@ -296,3 +299,65 @@ def _detect_new_subnets(current_subnets: list[int]) -> list[int]:
         return [n for n in current_subnets if n not in previous]
     except Exception:
         return []
+
+
+# ---------------------------------------------------------------------------
+# Agent-consumable files (AD18)
+# ---------------------------------------------------------------------------
+
+
+def _upload_agent_files(rankings: list, briefing: dict,
+                        all_metrics: dict, date: str) -> None:
+    """Upload llms.txt, metadata.json, and rankings.json to site bucket."""
+    if not _config.is_aws:
+        return
+
+    site_bucket = os.environ.get("SITE_BUCKET_NAME", "")
+    if not site_bucket:
+        return
+
+    try:
+        s3 = boto3.client("s3", region_name=_config.region)
+        now = datetime.now(timezone.utc).isoformat()
+
+        # llms.txt — machine-readable index for AI agents
+        llms_txt = (
+            "# TAO Mining Intelligence\n"
+            "> Bittensor subnet mining/validating metrics.\n"
+            "> Data refreshes per-subnet every 20-240 minutes (tempo-based).\n"
+            "> No subnet older than 4 hours.\n\n"
+            "## Endpoints\n"
+            "- /data/rankings.json — Subnet rankings sorted by attractiveness\n"
+            "- /data/briefing.json — Latest daily briefing and alerts\n"
+            "- /data/metadata.json — Per-subnet freshness timestamps\n"
+        )
+        s3.put_object(Bucket=site_bucket, Key="llms.txt",
+                      Body=llms_txt.encode(), ContentType="text/plain")
+
+        # metadata.json — per-subnet freshness
+        subnet_freshness = {}
+        for netuid, metrics in all_metrics.items():
+            meta = metrics.get("metadata", {})
+            subnet_freshness[str(netuid)] = {
+                "processed_at": meta.get("processed_at", meta.get("computation_timestamp", "")),
+                "source_block": meta.get("source_block_number", 0),
+            }
+
+        metadata = {
+            "generated_at": now,
+            "subnets_count": len(all_metrics),
+            "subnets": subnet_freshness,
+        }
+        s3.put_object(Bucket=site_bucket, Key="data/metadata.json",
+                      Body=json.dumps(metadata).encode(), ContentType="application/json")
+
+        # rankings.json — current rankings
+        s3.put_object(Bucket=site_bucket, Key="data/rankings.json",
+                      Body=json.dumps(rankings).encode(), ContentType="application/json")
+
+        # briefing.json — latest briefing
+        s3.put_object(Bucket=site_bucket, Key="data/briefing.json",
+                      Body=json.dumps(briefing).encode(), ContentType="application/json")
+
+    except Exception as e:
+        logger.warning(f"Failed to upload agent files to site bucket: {e}")

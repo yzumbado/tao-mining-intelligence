@@ -244,6 +244,7 @@ class TaoPipelineStack(Stack):
                 "HOME": "/tmp",
                 "TABLE_NAME": table.table_name,
                 "BUCKET_NAME": data_bucket.bucket_name,
+                "SITE_BUCKET_NAME": site_bucket.bucket_name,
             },
             log_group=logs.LogGroup(self, "FinalizerLogs",
                                     retention=logs.RetentionDays.ONE_MONTH),
@@ -369,7 +370,7 @@ class TaoPipelineStack(Stack):
         finalizer_fn.grant_invoke(processor_fn)
 
         # =====================================================================
-        # Monitoring: DLQ Alarms
+        # Monitoring: DLQ Alarms + Staleness
         # =====================================================================
         for dlq, name in [
             (collection_dlq, "Collection"),
@@ -385,6 +386,29 @@ class TaoPipelineStack(Stack):
                 comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
                 treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
             )
+
+        # Staleness alarm: fires if Discovery Lambda reports stale subnets
+        cloudwatch.Alarm(
+            self, "StalenessAlarm",
+            alarm_name="tao-subnets-stale",
+            metric=cloudwatch.Metric(
+                namespace="TaoPipeline",
+                metric_name="StaleSubnets",
+                statistic="Maximum",
+                period=Duration.hours(1),
+            ),
+            threshold=10,
+            evaluation_periods=2,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+        )
+
+        # Discovery Lambda needs cloudwatch:PutMetricData
+        discovery_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["cloudwatch:PutMetricData"],
+            resources=["*"],
+            conditions={"StringEquals": {"cloudwatch:namespace": "TaoPipeline"}},
+        ))
 
         # =====================================================================
         # CDN: CloudFront
