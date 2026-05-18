@@ -25,9 +25,13 @@ inclusion: always
 
 ## Project Overview
 
-An automated pipeline that continuously collects Bittensor subnet data, computes mining/validating intelligence metrics, and serves structured data to Kiro for TAO accumulation strategy decisions.
+An autonomous pipeline that continuously collects Bittensor subnet data, computes mining/validating intelligence metrics, and serves structured data to Kiro for TAO accumulation strategy decisions.
 
 **Primary goal**: Accumulate TAO through mining or validating — not USD conversion.
+
+**Long-term vision**: A 7-stage autonomous TAO machine that discovers opportunities, researches requirements, builds mining agents, tests strategies, deploys on-chain, and self-optimizes. See `kb/product-vision-roadmap.md` for the full roadmap.
+
+**Current stage**: Stage 1 (COLLECT) is complete and autonomous. Stage 2 (RESEARCH) is next.
 
 ## How to Orient Yourself
 

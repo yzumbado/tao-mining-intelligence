@@ -1,0 +1,260 @@
+# TAO Mining Intelligence — Product Vision & Roadmap
+
+## End Goal
+
+An **autonomous TAO accumulation machine** that continuously discovers, evaluates,
+deploys, and optimizes mining and validating positions across the Bittensor network.
+The system self-improves by learning from its own performance, reallocating resources
+to maximize net TAO yield with minimal human intervention.
+
+## Design Principles
+
+- **Autonomous by default**: Every stage should run without human intervention once configured
+- **Self-improving**: Results feed back into strategy, improving decisions over time
+- **Free tier first**: Maximize AWS free tier; only spend money on actual mining compute
+- **Pipeline architecture**: Each stage has clear inputs/outputs, independently testable
+- **Deterministic where possible**: LLM reserved for research/analysis, not core logic
+- **TAO accumulation, not USD**: All decisions optimize for net TAO, not fiat conversion
+
+## The Seven Stages
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    AUTONOMOUS TAO MACHINE                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Stage 1: COLLECT ✅ (DONE)                                      │
+│  │  On-chain data, metrics, rankings                             │
+│  │  Self-refreshing every 20-72 min per subnet                   │
+│  ▼                                                               │
+│  Stage 2: RESEARCH (NEXT)                                        │
+│  │  Subnet requirements, model types, hardware needs             │
+│  │  GitHub scraping, code analysis, difficulty classification    │
+│  ▼                                                               │
+│  Stage 3: STRATEGIZE                                             │
+│  │  Given my resources, where to deploy?                         │
+│  │  Mine vs validate, portfolio optimization                     │
+│  ▼                                                               │
+│  Stage 4: BUILD                                                  │
+│  │  Generate/adapt mining agents for target subnets              │
+│  │  Package as deployable containers                             │
+│  ▼                                                               │
+│  Stage 5: TEST                                                   │
+│  │  Simulate against historical data                             │
+│  │  Predict rank, yield, deregistration risk                     │
+│  ▼                                                               │
+│  Stage 6: DEPLOY                                                 │
+│  │  Register on-chain, deploy compute, monitor                   │
+│  │  Auto-deregister if underperforming                           │
+│  ▼                                                               │
+│  Stage 7: OPTIMIZE                                               │
+│     Compare actual vs predicted, reallocate, self-improve        │
+│     Feed learnings back to Stage 3                               │
+│                                                                   │
+│  ◄──────── Continuous feedback loop ────────►                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Stage Details
+
+### Stage 1: COLLECT ✅ Complete
+
+**Status**: Deployed, autonomous, 129 subnets self-scheduling
+
+**What it produces**:
+- Per-subnet metrics: ROI, yield, competition, churn, risk, taoflow health
+- Rankings sorted by attractiveness (live view, updates every subnet refresh)
+- Agent-consumable endpoints (llms.txt, rankings.json, metadata.json)
+- Historical snapshots (append-only S3, full time-series)
+
+**Infrastructure**: Lambda (4 functions), DynamoDB, S3, EventBridge Scheduler, CloudFront
+**Cost**: $0/month (free tier)
+
+---
+
+### Stage 2: RESEARCH (Next)
+
+**Goal**: For each subnet, answer "what does it take to win here?"
+
+**Inputs**: Rankings from Stage 1, subnet GitHub repos, documentation
+
+**Outputs** (per subnet):
+```json
+{
+  "netuid": 4,
+  "subnet_name": "Multi-Modality",
+  "model_type": "multi-modal generation",
+  "hardware_minimum": {"gpu": "A100", "vram_gb": 40, "cpu_cores": 8},
+  "open_source_miner": "https://github.com/...",
+  "miner_difficulty": "medium",
+  "validator_minimum_stake": 50000,
+  "estimated_monthly_cost_usd": 200,
+  "net_profit_tao_per_day": 43.2,
+  "entry_recommendation": "MINE",
+  "last_researched": "2026-05-18T00:00:00Z"
+}
+```
+
+**How it works**:
+1. Scrape subnet's GitHub repo (most are public)
+2. Analyze miner code: detect model type, dependencies, GPU requirements
+3. Check if open-source miner exists (can you just run it?)
+4. Estimate hardware cost from cloud GPU pricing
+5. Compare cost vs yield from Stage 1 → net profit
+6. Classify difficulty: trivial (run open-source), medium (adapt), hard (build custom)
+
+**Infrastructure**: Lambda + S3 + GitHub API (free for public repos)
+**LLM usage**: Code analysis (classify model type, extract requirements)
+**Refresh cadence**: Weekly per subnet (requirements don't change daily)
+**Cost**: ~$0 (GitHub API free, LLM via Bedrock free tier or local)
+
+---
+
+### Stage 3: STRATEGIZE
+
+**Goal**: Given my specific resources, produce an action plan
+
+**Inputs**: Research from Stage 2 + user profile (hardware, capital, skills)
+
+**User profile** (stored in DynamoDB):
+```json
+{
+  "available_hardware": [{"type": "RTX 4090", "vram_gb": 24, "count": 1}],
+  "available_tao_for_staking": 1000,
+  "available_tao_for_registration": 10,
+  "risk_tolerance": "medium",
+  "max_subnets": 3,
+  "prefer_passive": true
+}
+```
+
+**Outputs**:
+- Ranked list of actionable opportunities
+- For each: mine or validate, expected yield, required investment, risk level
+- Portfolio allocation recommendation (diversification)
+- "Do nothing" option with reasoning (if no good opportunities exist)
+
+**Infrastructure**: Lambda (pure computation)
+**Cost**: $0
+
+---
+
+### Stage 4: BUILD
+
+**Goal**: Produce a deployable mining agent for a target subnet
+
+**Inputs**: Strategy decision + subnet miner code from Research
+
+**What it does**:
+1. Fork/clone the subnet's open-source miner
+2. Configure for user's hardware (model size, batch size, etc.)
+3. Package as Docker container with all dependencies
+4. Generate deployment scripts (EC2 user-data, docker-compose)
+5. For custom models: fine-tune or select best available checkpoint
+
+**Infrastructure**: Lambda for orchestration, CodeBuild for Docker builds
+**Cost**: CodeBuild free tier (100 min/month). GPU compute is the real cost.
+
+**Key constraint**: Start with subnets that have open-source miners and don't
+require custom model training. These are "run and earn" opportunities.
+
+---
+
+### Stage 5: TEST
+
+**Goal**: Validate strategy before spending TAO on registration
+
+**Inputs**: Built agent + historical metagraph data from Stage 1
+
+**What it does**:
+1. Replay last 7 days of metagraph data
+2. Simulate: "if my agent produced output X, where would I rank?"
+3. Estimate emission share based on historical validator scoring patterns
+4. Calculate: would I have been deregistered? When?
+5. Produce confidence interval: "70% chance of earning 2-5 TAO/day"
+
+**Infrastructure**: Lambda + S3 (historical data already stored)
+**Cost**: $0
+
+---
+
+### Stage 6: DEPLOY
+
+**Goal**: Go live on-chain with minimal risk
+
+**Inputs**: Tested agent + registration decision
+
+**What it does**:
+1. Register hotkey on target subnet (automated via SDK)
+2. Deploy miner container to compute (EC2 spot instance)
+3. Monitor first 24h (immunity period — can't be deregistered)
+4. Track emission rank vs prediction from Stage 5
+5. Auto-deregister if performance is below break-even threshold
+6. Alert if approaching deregistration risk
+
+**Infrastructure**: Lambda (orchestration), EC2 spot (mining compute)
+**Cost**: EC2 spot varies ($0.30-$3/hr for GPU instances)
+
+---
+
+### Stage 7: OPTIMIZE
+
+**Goal**: Continuously improve returns across all positions
+
+**Inputs**: Live performance data + Stage 1 continuous monitoring
+
+**What it does**:
+1. Compare actual yield vs predicted yield (calibrate Stage 5 model)
+2. Detect declining subnets early (emission trend, new competitors)
+3. Recommend reallocation: "move from SN8 (declining) to SN4 (growing)"
+4. Auto-reallocate validator stake between subnets
+5. A/B test mining strategies (run two models, keep the winner)
+6. Feed learnings back to Stage 3 (improve strategy model over time)
+
+**Infrastructure**: Lambda + DynamoDB (lightweight optimization logic)
+**Cost**: $0 for the optimization logic; mining compute is separate
+
+---
+
+## Implementation Priority
+
+| Stage | Effort | Value | Dependencies | Target |
+|-------|--------|-------|--------------|--------|
+| 1. COLLECT | ✅ Done | Foundation | None | Done |
+| 2. RESEARCH | 1-2 weeks | Unlocks strategy | Stage 1 | Next |
+| 3. STRATEGIZE | 3-5 days | Unlocks action | Stage 2 | After Research |
+| 4. BUILD | 1-2 weeks | First real miner | Stage 3 | Month 2 |
+| 5. TEST | 3-5 days | Risk reduction | Stage 4 + historical data | Month 2 |
+| 6. DEPLOY | 1 week | First TAO earned | Stage 5 | Month 2 |
+| 7. OPTIMIZE | Ongoing | Compound returns | Stage 6 running | Month 3+ |
+
+## Cost Model
+
+| Stage | Monthly Cost |
+|-------|-------------|
+| 1-3 (Intelligence) | $0 (free tier) |
+| 4-5 (Build + Test) | $0-5 (CodeBuild, occasional GPU test) |
+| 6-7 (Deploy + Optimize) | $50-500 (GPU compute for mining) |
+
+The intelligence pipeline is free. You only spend money when you actually deploy
+a miner — and by then, you have high confidence it will be profitable.
+
+## Success Metrics
+
+- **Stage 1**: All 129 subnets refreshing within 4h staleness ✅
+- **Stage 2**: 80%+ of subnets have research profiles
+- **Stage 3**: Strategy produces actionable recommendations weekly
+- **Stage 4**: First miner deployed from automated pipeline
+- **Stage 5**: Prediction accuracy > 70% (actual yield within 30% of predicted)
+- **Stage 6**: First TAO earned autonomously
+- **Stage 7**: Month-over-month TAO yield increasing without manual intervention
+
+## Long-Term Vision
+
+The system becomes a **TAO compounding engine**:
+- Earned TAO funds more validator stake → more passive income
+- Earned TAO funds more registrations → more mining positions
+- Better data → better strategy → higher yield → more capital → repeat
+
+The human's role shifts from "operator" to "investor" — setting risk parameters
+and capital allocation, while the machine handles discovery, execution, and optimization.
