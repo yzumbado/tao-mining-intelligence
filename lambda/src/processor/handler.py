@@ -111,9 +111,13 @@ def handle(event: dict, context: Any) -> dict:
         current_block = snapshot.get("metadata", {}).get("source_block_number", 5000000)
 
         # Deregistration risk
+        num_uids = snapshot.get("metadata", {}).get("num_uids", len(neurons))
+        max_uids = snapshot.get("metadata", {}).get("max_uids", 256)
         dereg_risks = MetricsEngine.compute_deregistration_risk(
             neurons, current_block, immunity_period,
-            recent_registrations_24h=_count_recent_registrations(neurons_raw, current_block))
+            recent_registrations_24h=_count_recent_registrations(neurons_raw, current_block),
+            num_uids=num_uids,
+            max_uids=max_uids)
         metrics_computed.append("deregistration_risk")
 
         # Competitive density

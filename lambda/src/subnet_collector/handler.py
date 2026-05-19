@@ -115,6 +115,7 @@ async def _collect_metagraph(sub, netuid: int, date: str) -> Optional[dict]:
                 "alpha_stake": float(mg.AS[i]),
                 "total_stake": float(mg.TS[i]),
                 "block_at_registration": int(mg.block_at_registration[i]),
+                "validator_permit": bool(mg.validator_permit[i]),
             })
 
         snapshot = {
@@ -124,6 +125,8 @@ async def _collect_metagraph(sub, netuid: int, date: str) -> Optional[dict]:
                 "collected_at": datetime.now(timezone.utc).isoformat(),
                 "source_block_number": int(mg.block),
                 "neuron_count": int(mg.n),
+                "num_uids": int(mg.num_uids),
+                "max_uids": int(mg.max_uids),
                 "blocks_since_last_step": int(mg.blocks_since_last_step),
             },
             "data": {"neurons": neurons},

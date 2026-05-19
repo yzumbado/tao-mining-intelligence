@@ -77,6 +77,8 @@ class MetricsEngine:
         current_block: int,
         immunity_period: int,
         recent_registrations_24h: int,
+        num_uids: Optional[int] = None,
+        max_uids: Optional[int] = None,
     ) -> list[DeregistrationRisk]:
         """Compute deregistration risk for each miner in a subnet.
 
@@ -134,11 +136,20 @@ class MetricsEngine:
         if not miners:
             return []
 
-        total_slots = len(neurons)
-        occupied_slots = sum(1 for n in neurons if n.active)
+        # DECISION: DEREG-001
+        # Choice: Use num_uids >= max_uids for subnet fullness (not sum(active))
+        # Alternatives rejected: sum(active) — active means "set weights recently", not "slot occupied"
+        # Rationale: Official Bittensor docs define num_uids/max_uids for this purpose.
+        #   Live data shows subnets with 256 registered neurons but only 12 active=True.
+        # Revisit when: Bittensor changes deregistration mechanics
+        # Evidence: Live chain SN95: num_uids=256, max_uids=256, active.sum()=12
+        if num_uids is not None and max_uids is not None:
+            subnet_full = num_uids >= max_uids
+        else:
+            # Backward compat: fall back to counting neurons with non-default hotkeys
+            subnet_full = len(neurons) >= 256  # conservative default
 
-        # If subnet has empty slots, no one is at risk of deregistration
-        if occupied_slots < total_slots:
+        if not subnet_full:
             return [
                 DeregistrationRisk(
                     uid=m.uid,
@@ -1117,15 +1128,22 @@ class MetricsEngine:
         if not miners:
             return 0.0
 
-        active_miners = sum(1 for m in miners if m.active)
+        # DECISION: DENSITY-001
+        # Choice: Count earning miners (emission > 0) instead of active miners
+        # Alternatives rejected: sum(m.active) — active means "set weights recently", not "earning"
+        # Rationale: A miner with emission > 0 is competing for rewards regardless of active status.
+        #   Live data shows miners earning with active=False (haven't set weights but still receive emission).
+        # Revisit when: We find a better density formula (current one mixes units)
+        # Evidence: SN95 has 1 earning miner with active=False, density was incorrectly 0.0
+        earning_miners = sum(1 for m in miners if m.emission > 0)
         total_emission = sum(m.emission for m in miners)
 
         if total_emission <= 0:
             return 0.0
 
-        # Ratio of active miners to total emission, capped at 1.0
+        # Ratio of earning miners to total emission, capped at 1.0
         # Normalized: more miners competing for same emission = higher density
-        density = active_miners / (active_miners + total_emission)
+        density = earning_miners / (earning_miners + total_emission)
         return max(0.0, min(1.0, density))
 
     # =========================================================================

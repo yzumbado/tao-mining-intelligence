@@ -210,8 +210,8 @@ def _compute_attractiveness_score(net_tao_yield: float, days_to_recoup: float,
     - emission_trend (weight: 0.1) — growing emissions = better
     - taoflow health (weight: 0.1) — healthy = bonus, death spiral = penalty
     """
-    # Normalize yield (assume max ~5 TAO/day is excellent)
-    yield_score = min(net_tao_yield / 5.0, 1.0)
+    # Normalize yield (assume max ~100 TAO/day is excellent)
+    yield_score = min(net_tao_yield / 100.0, 1.0)
 
     # Normalize recoup (7 days = perfect, 365+ = terrible)
     if days_to_recoup <= 0 or days_to_recoup == float("inf"):
