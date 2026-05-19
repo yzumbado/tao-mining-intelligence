@@ -362,7 +362,7 @@ class TaoPipelineStack(Stack):
         # Staleness alarm: fires if Discovery Lambda reports stale subnets
         alert_topic = sns.Topic(self, "AlertTopic", topic_name="tao-pipeline-alerts")
         alert_topic.add_subscription(
-            subs.EmailSubscription("yvvargas@amazon.com")
+            subs.EmailSubscription("yzumbado@gmail.com")
         )
 
         staleness_alarm = cloudwatch.Alarm(
