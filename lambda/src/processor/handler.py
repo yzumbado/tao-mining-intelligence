@@ -161,7 +161,8 @@ def handle(event: dict, context: Any) -> dict:
         # Store derived metrics to S3
         derived_data = _build_derived_output(
             netuid, date, dereg_risks, competitive_density, emission_trend,
-            roi, reward_model, gini, top_3, taoflow, churn, validator_landscape)
+            roi, reward_model, gini, top_3, taoflow, churn, validator_landscape,
+            source_block_number=current_block)
         _storage.store_snapshot(
             _storage.get_date_path("derived/metrics", date, netuid), derived_data)
 
@@ -311,7 +312,8 @@ def _get_previous_hotkeys(prev_snapshot: Optional[dict]) -> set[str]:
 
 def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                           emission_trend, roi, reward_model, gini, top_3,
-                          taoflow, churn, validator_landscape) -> dict:
+                          taoflow, churn, validator_landscape,
+                          source_block_number: int = 0) -> dict:
     """Build the derived metrics JSON structure for S3 storage."""
     now = datetime.now(timezone.utc).isoformat()
     return {
@@ -320,6 +322,7 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
             "source_snapshot_date": date,
             "processed_at": now,
             "computation_timestamp": now,
+            "source_block_number": source_block_number,
             "schema_version": "1.0.0",
             "pipeline_version": "1.0.0",
         },

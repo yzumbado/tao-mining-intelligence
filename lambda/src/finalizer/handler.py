@@ -362,6 +362,46 @@ def _detect_new_subnets(current_subnets: list[int]) -> list[int]:
 # ---------------------------------------------------------------------------
 
 
+def _enrich_rankings_for_site(rankings: list[dict], all_metrics: dict[int, dict]) -> list[dict]:
+    """Enrich ranking entries with profile fields needed by index.html template.
+
+    Adds name, category, mining_style, taoflow_status from DynamoDB profiles
+    and derived metrics. Missing fields default to empty string (template handles gracefully).
+    """
+    # Build lookup of taoflow_status from derived metrics
+    taoflow_map = {}
+    for netuid, metrics in all_metrics.items():
+        status = metrics.get("data", {}).get("taoflow_health", {}).get("status", "")
+        taoflow_map[netuid] = status
+
+    # Batch-read profiles from DynamoDB
+    profiles = {}
+    try:
+        resp = _state_manager._table.scan(
+            FilterExpression="SK = :sk",
+            ExpressionAttributeValues={":sk": "PROFILE#basic"},
+            ProjectionExpression="PK, netuid, #n, category, mining_style",
+            ExpressionAttributeNames={"#n": "name"},
+        )
+        for item in resp.get("Items", []):
+            nid = int(item.get("netuid", 0))
+            profiles[nid] = item
+    except Exception:
+        pass
+
+    enriched = []
+    for r in rankings:
+        entry = dict(r)
+        netuid = r["netuid"]
+        profile = profiles.get(netuid, {})
+        entry["name"] = profile.get("name", "")
+        entry["category"] = profile.get("category", "")
+        entry["mining_style"] = profile.get("mining_style", "")
+        entry["taoflow_status"] = taoflow_map.get(netuid, "")
+        enriched.append(entry)
+    return enriched
+
+
 def _upload_agent_files(rankings: list, briefing: dict,
                         all_metrics: dict, date: str) -> None:
     """Upload llms.txt, metadata.json, rankings.json, and HTML site to site bucket."""
@@ -422,7 +462,8 @@ def _upload_agent_files(rankings: list, briefing: dict,
         try:
             from src.site_generator.generator import SiteGenerator
             gen = SiteGenerator()
-            index_html = gen.generate_index(rankings, last_updated=now)
+            enriched = _enrich_rankings_for_site(rankings, all_metrics)
+            index_html = gen.generate_index(enriched, last_updated=now)
             rankings_html = gen.generate_rankings_page(rankings)
             briefing_html = gen.generate_briefing_page(briefing)
 

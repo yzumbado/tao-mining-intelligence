@@ -7,14 +7,14 @@
     <div class="bg-[#161b22] border border-gray-700 rounded-lg p-4 flex items-center justify-between">
         <div>
             <span class="text-white font-medium">SN{{ subnet.netuid }}</span>
-            <span class="text-gray-400 ml-2">{{ subnet.name }}</span>
-            <span class="ml-3 px-2 py-0.5 text-xs rounded bg-blue-900 text-blue-300">{{ subnet.category }}</span>
-            <span class="ml-1 px-2 py-0.5 text-xs rounded bg-purple-900 text-purple-300">{{ subnet.mining_style }}</span>
+            {% if subnet.name %}<span class="text-gray-400 ml-2">{{ subnet.name }}</span>{% endif %}
+            {% if subnet.category %}<span class="ml-3 px-2 py-0.5 text-xs rounded bg-blue-900 text-blue-300">{{ subnet.category }}</span>{% endif %}
+            {% if subnet.mining_style %}<span class="ml-1 px-2 py-0.5 text-xs rounded bg-purple-900 text-purple-300">{{ subnet.mining_style }}</span>{% endif %}
             {% if subnet.taoflow_status == "DEATH_SPIRAL_RISK" %}
             <span class="ml-1 px-2 py-0.5 text-xs rounded bg-red-900 text-red-300">{{ subnet.taoflow_status }}</span>
             {% elif subnet.taoflow_status == "DECLINING" %}
             <span class="ml-1 px-2 py-0.5 text-xs rounded bg-yellow-900 text-yellow-300">{{ subnet.taoflow_status }}</span>
-            {% else %}
+            {% elif subnet.taoflow_status == "HEALTHY" %}
             <span class="ml-1 px-2 py-0.5 text-xs rounded bg-green-900 text-green-300">{{ subnet.taoflow_status }}</span>
             {% endif %}
         </div>
