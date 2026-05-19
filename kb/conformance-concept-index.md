@@ -125,3 +125,19 @@ Then implement:
 | `conformance-auto-fix-policy.md` | What's safe to auto-fix, classification | Proof 5 |
 | `conformance-architecture.md` | Lambda design, triggers, cost, state | Proofs 1-5 |
 | `conformance-collaboration-surface.md` | What humans see, how they interact | Proof 4 |
+
+---
+
+## Design Rules (derived from proofs)
+
+Lessons learned from running Proofs 3 and 4 on 2026-05-19. These constrain the architecture.
+
+| # | Rule | Evidence | Implication |
+|---|------|----------|-------------|
+| 1 | Track "last triggered" for every conditional output path | Emission alert threshold (10%) never fired in 2 days — feature was dead | Auditor maintains a registry of conditional paths + last-fire timestamps |
+| 2 | Maintain statistical profiles of live numeric fields | Test `competitive_density` values (0.2-0.4) are 3-5x above live max (0.074) | Auditor computes min/max/median per field, flags test fixtures outside live range |
+| 3 | Detect when code hardcodes values that exist in config | Finalizer hardcoded `0.10` despite `thresholds.py` having the same value | Auditor scans for literals that duplicate configurable parameters |
+| 4 | Operate on live production data, not just code | No static analysis could determine 10% is wrong for Bittensor emissions | Auditor MUST fetch and analyze live outputs — this is runtime verification |
+| 5 | Findings separate detection (agent) from decision (human) | Fixing the threshold was 2 lines, but knowing the right value required domain reasoning | Agent says "this never fires, live range is X"; human says "lower to Y" |
+| 6 | Cheap probes > exhaustive checks | Proof 3 took 5 min, found a dead feature + a design question | Auditor runs targeted probes, not full scans. Coverage via randomization over time |
+| 7 | "Never-fires" detection is highest ROI | Found dead alerts, dead badges, dead density penalty — all from one pattern | Priority check: for each output branch, has it ever produced non-default output? |
