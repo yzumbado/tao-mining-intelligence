@@ -179,6 +179,12 @@ lambda/src/
 - ✅ First live run: 129/129 collected, 128 processed, rankings generated
 - ✅ AD18 Phase 1: Configurable refresh policy, processed_at timestamps, validation relaxation
 - ✅ Tech debt: zero known issues
+- ✅ Metrics data fix: active field misinterpretation (deregistration risk, density, attractiveness ceiling)
+- ✅ Staking Intelligence: compute_staking_yield metric + staking_rankings.json endpoint
+- ✅ HTML site generation: index.html, rankings.html, briefing.html via Jinja2
+- ✅ SNS alerting: staleness alarm → yzumbado@gmail.com
+- ✅ Auto-generated metrics reference: kb/metrics-reference.md from code docstrings
+- ✅ Agent plan execution research: kb/agent-plan-execution-research.md
 
 ### Descoped (Phase 2+):
 - `subnet.html` and `health.html` templates (4 templates shipped, 2 deferred)
