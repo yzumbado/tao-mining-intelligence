@@ -1221,6 +1221,111 @@ class MetricsEngine:
         )
 
 
+    # =========================================================================
+    # Staking Intelligence: Validator Yield Per TAO Staked
+    # =========================================================================
+
+    @staticmethod
+    def compute_staking_yield(
+        neurons: list[Neuron],
+        alpha_tao_price: float,
+        pool_tao_liquidity: float,
+        stake_amount_tao: float = 10.0,
+    ) -> dict:
+        """Compute net TAO yield for staking on a subnet.
+
+        Metric:
+            name: Staking Yield (Net TAO Return)
+            status: HYPOTHESIS
+            hypothesis: |
+                When you stake on a subnet, you buy alpha tokens and stake them.
+                Your dividend share is proportional to your stake (S = AS + TS).
+                Yield is earned in alpha, which must be converted back to TAO.
+                Net return accounts for entry slippage, exit slippage, and alpha price risk.
+            formula: |
+                alpha_bought = stake_tao / alpha_price × (1 - entry_slippage)
+                your_share = alpha_bought / (total_validator_alpha_stake + alpha_bought)
+                daily_alpha_yield = total_validator_emission_daily × your_share
+                daily_tao_net = daily_alpha_yield × alpha_price × (1 - exit_slippage)
+                apy = daily_tao_net × 365 / stake_tao × 100
+                break_even_depreciation = annual_yield / principal_value
+            usefulness_mining: Not directly relevant
+            usefulness_staking: PRIMARY metric — answers "where should I stake my TAO for best return?"
+            usefulness_risk: break_even_depreciation shows how much alpha can drop before you lose money
+            output_range: "apy: (-100%, ∞); daily_tao_net: [0, ∞)"
+            known_issues: |
+                - Assumes dividends proportional to S (validated on SN95 and SN1, D/S_share ≈ 1.0)
+                - Slippage is conservative upper bound (constant product AMM)
+                - Does not account for alpha price appreciation
+                - Uses current alpha price for exit
+            assumptions: |
+                - Dividends remain proportional to stake (validated live)
+                - Alpha price stays constant (conservative)
+                - You stake via alpha (confirmed: no direct TAO staking on subnets)
+
+        Args:
+            neurons: All neurons in the subnet.
+            alpha_tao_price: Current alpha/TAO exchange rate.
+            pool_tao_liquidity: TAO in the AMM pool (for slippage).
+            stake_amount_tao: Amount of TAO to stake (default 10).
+
+        Returns:
+            Dict with staking yield metrics.
+        """
+        validators = [n for n in neurons if n.dividends > 0]
+
+        if not validators or alpha_tao_price <= 0:
+            return {
+                "viable": False,
+                "net_apy_percent": 0.0,
+                "daily_tao_net": 0.0,
+                "entry_slippage": 0.0,
+                "exit_slippage": 0.0,
+                "total_validator_stake": 0.0,
+                "active_validators": 0,
+                "break_even_alpha_depreciation": 0.0,
+            }
+
+        total_alpha_stake = sum(v.alpha_stake for v in validators)
+        total_emission = sum(v.emission for v in validators)  # already daily
+
+        # Entry: buy alpha with TAO (with slippage)
+        entry_slippage = MetricsEngine._estimate_slippage(
+            stake_amount_tao / alpha_tao_price, alpha_tao_price, pool_tao_liquidity
+        )
+        alpha_bought = (stake_amount_tao / alpha_tao_price) * (1 - entry_slippage)
+
+        # Your share of the validator pool
+        your_share = alpha_bought / (total_alpha_stake + alpha_bought) if total_alpha_stake > 0 else 0
+
+        # Daily yield in alpha
+        daily_alpha_yield = total_emission * your_share
+
+        # Exit: convert daily yield back to TAO
+        exit_slippage = MetricsEngine._estimate_slippage(
+            daily_alpha_yield, alpha_tao_price, pool_tao_liquidity
+        )
+        daily_tao_net = daily_alpha_yield * alpha_tao_price * (1 - exit_slippage)
+
+        # APY
+        apy = (daily_tao_net * 365 / stake_amount_tao * 100) if stake_amount_tao > 0 else 0
+
+        # Break-even alpha depreciation
+        principal_tao_value = alpha_bought * alpha_tao_price
+        break_even = (daily_tao_net * 365 / principal_tao_value) if principal_tao_value > 0 else 0
+
+        return {
+            "viable": True,
+            "net_apy_percent": apy,
+            "daily_tao_net": daily_tao_net,
+            "entry_slippage": entry_slippage,
+            "exit_slippage": exit_slippage,
+            "total_validator_stake": total_alpha_stake,
+            "active_validators": len(validators),
+            "break_even_alpha_depreciation": break_even,
+        }
+
+
 # =============================================================================
 # Standalone functions for property testing (simple types, no Pydantic models)
 # =============================================================================

@@ -15,6 +15,7 @@ from aws_cdk import (
     RemovalPolicy,
     Stack,
     aws_cloudwatch as cloudwatch,
+    aws_cloudwatch_actions as cloudwatch_actions,
     aws_cloudfront as cloudfront,
     aws_cloudfront_origins as origins,
     aws_dynamodb as dynamodb,
@@ -359,7 +360,12 @@ class TaoPipelineStack(Stack):
             )
 
         # Staleness alarm: fires if Discovery Lambda reports stale subnets
-        cloudwatch.Alarm(
+        alert_topic = sns.Topic(self, "AlertTopic", topic_name="tao-pipeline-alerts")
+        alert_topic.add_subscription(
+            subs.EmailSubscription("yvvargas@amazon.com")
+        )
+
+        staleness_alarm = cloudwatch.Alarm(
             self, "StalenessAlarm",
             alarm_name="tao-subnets-stale",
             metric=cloudwatch.Metric(
@@ -372,6 +378,9 @@ class TaoPipelineStack(Stack):
             evaluation_periods=2,
             comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
             treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+        )
+        staleness_alarm.add_alarm_action(
+            cloudwatch_actions.SnsAction(alert_topic)
         )
 
         # Discovery Lambda needs cloudwatch:PutMetricData + scheduler:ListSchedules

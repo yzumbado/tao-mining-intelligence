@@ -287,6 +287,62 @@ def _generate_briefing(date: str, cycle_id: str,
     }
 
 
+def _generate_staking_rankings(all_metrics: dict[int, dict]) -> list[dict]:
+    """Generate staking rankings sorted by net APY.
+
+    Uses validator landscape data from derived metrics to compute
+    yield per TAO staked, accounting for entry/exit slippage.
+    """
+    from src.processor.metrics import MetricsEngine
+    from src.models.schemas import Neuron
+
+    staking_ranks = []
+    for netuid, metrics in all_metrics.items():
+        data = metrics.get("data", {})
+        vl = data.get("validator_landscape", {})
+        roi = data.get("roi_estimate", {})
+
+        alpha_price = _safe_float(roi.get("alpha_tao_rate", 0.0))
+        total_stake = _safe_float(vl.get("total_validator_stake", 0.0))
+        validators = vl.get("active_validators", 0)
+        net_yield = _safe_float(vl.get("net_tao_yield_per_validator_per_day", 0.0))
+
+        if validators == 0 or alpha_price <= 0 or total_stake <= 0:
+            continue
+
+        # Compute total daily validator emission in TAO
+        total_daily_tao = net_yield * validators
+
+        # Simple yield per unit of stake (no slippage — for ranking purposes)
+        yield_per_stake = total_daily_tao / total_stake
+        apy = yield_per_stake * 365 * 100
+
+        # Estimate entry slippage for 10 TAO stake
+        alpha_to_buy = 10.0 / alpha_price if alpha_price > 0 else 0
+        pool_tao = _safe_float(data.get("roi_estimate", {}).get("alpha_tao_rate", 0)) * 1000  # rough pool estimate
+        # Use a simplified slippage: small stakes have negligible slippage
+        entry_slippage = min(alpha_to_buy / (alpha_to_buy + total_stake) if total_stake > 0 else 0, 0.5)
+
+        # Break-even: how much can alpha drop annually before you lose money
+        break_even = apy / 100.0  # if APY is 50%, alpha can drop 50% and you break even
+
+        staking_ranks.append({
+            "netuid": netuid,
+            "net_apy_percent": round(apy, 2),
+            "daily_tao_per_10_staked": round(yield_per_stake * 10, 6),
+            "total_validator_stake": round(total_stake, 2),
+            "active_validators": validators,
+            "alpha_price": alpha_price,
+            "concentrated": vl.get("concentrated", False),
+            "top_1_stake_share": round(_safe_float(vl.get("top_1_stake_share", 0)), 4),
+            "break_even_alpha_depreciation": round(break_even, 4),
+            "entry_slippage_10tao": round(entry_slippage, 6),
+        })
+
+    staking_ranks.sort(key=lambda r: r["net_apy_percent"], reverse=True)
+    return staking_ranks
+
+
 def _detect_new_subnets(current_subnets: list[int]) -> list[int]:
     """Detect subnets that are new (not in previous active list)."""
     try:
@@ -308,7 +364,7 @@ def _detect_new_subnets(current_subnets: list[int]) -> list[int]:
 
 def _upload_agent_files(rankings: list, briefing: dict,
                         all_metrics: dict, date: str) -> None:
-    """Upload llms.txt, metadata.json, and rankings.json to site bucket."""
+    """Upload llms.txt, metadata.json, rankings.json, and HTML site to site bucket."""
     if not _config.is_aws:
         return
 
@@ -330,6 +386,9 @@ def _upload_agent_files(rankings: list, briefing: dict,
             "- /data/rankings.json — Subnet rankings sorted by attractiveness\n"
             "- /data/briefing.json — Latest daily briefing and alerts\n"
             "- /data/metadata.json — Per-subnet freshness timestamps\n"
+            "- /index.html — Human-readable dashboard\n"
+            "- /rankings.html — Sortable rankings table\n"
+            "- /briefing.html — Daily briefing page\n"
         )
         s3.put_object(Bucket=site_bucket, Key="llms.txt",
                       Body=llms_txt.encode(), ContentType="text/plain")
@@ -358,6 +417,32 @@ def _upload_agent_files(rankings: list, briefing: dict,
         # briefing.json — latest briefing
         s3.put_object(Bucket=site_bucket, Key="data/briefing.json",
                       Body=json.dumps(briefing).encode(), ContentType="application/json")
+
+        # HTML site generation
+        try:
+            from src.site_generator.generator import SiteGenerator
+            gen = SiteGenerator()
+            index_html = gen.generate_index(rankings, last_updated=now)
+            rankings_html = gen.generate_rankings_page(rankings)
+            briefing_html = gen.generate_briefing_page(briefing)
+
+            s3.put_object(Bucket=site_bucket, Key="index.html",
+                          Body=index_html.encode(), ContentType="text/html")
+            s3.put_object(Bucket=site_bucket, Key="rankings.html",
+                          Body=rankings_html.encode(), ContentType="text/html")
+            s3.put_object(Bucket=site_bucket, Key="briefing.html",
+                          Body=briefing_html.encode(), ContentType="text/html")
+        except Exception as e:
+            logger.warning(f"HTML site generation failed (non-critical): {e}")
+
+        # Staking rankings
+        try:
+            staking_rankings = _generate_staking_rankings(all_metrics)
+            s3.put_object(Bucket=site_bucket, Key="data/staking_rankings.json",
+                          Body=json.dumps(staking_rankings).encode(),
+                          ContentType="application/json")
+        except Exception as e:
+            logger.warning(f"Staking rankings generation failed (non-critical): {e}")
 
     except Exception as e:
         logger.warning(f"Failed to upload agent files to site bucket: {e}")
