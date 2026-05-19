@@ -101,8 +101,8 @@ class MetricsEngine:
                 how actively people are trying to enter. Bottom 25% face real risk;
                 top 75% are safe unless registration pressure is extreme.
             formula: |
-                IF subnet has empty slots → risk = 0.0 for all
-                IF miner is immune → risk = 0.0
+                IF num_uids < max_uids (subnet not full) → risk = 0.0 for all
+                IF miner is immune (blocks_since_reg < immunity_period) → risk = 0.0
                 queue_pressure = min(recent_registrations_24h / 10, 1.0)
                 IF miner in bottom 25% by emission:
                     base_risk = 1.0 - (rank / bottom_quartile_size)
@@ -115,11 +115,11 @@ class MetricsEngine:
             known_issues: |
                 - Bottom 25% threshold may not be correct for all subnets
                 - Queue pressure cap of 10 registrations/day may be too low for popular subnets
-                - Not yet validated against actual deregistration events
+                - pruning_score field exists in SDK docs but returns empty list in v10
             assumptions: |
                 - Is the bottom 25% threshold correct?
                 - Does queue_pressure of 10/day represent max pressure?
-                - Is immunity period always respected by the chain?
+                - Will pruning_score become available in future SDK versions?
 
         Args:
             neurons: All neurons in the subnet metagraph.
@@ -1099,17 +1099,16 @@ class MetricsEngine:
                 This ratio captures "miners per unit of emission" in a normalized way.
             formula: |
                 miners = [n for n if n.incentive > 0 or not n.is_validator]
-                active_miners = count(active)
+                earning_miners = count(m for m in miners if m.emission > 0)
                 total_emission = sum(m.emission)
-                density = active_miners / (active_miners + total_emission)
+                density = earning_miners / (earning_miners + total_emission)
             usefulness_mining: High density = crowded, hard to stand out. Low density = less competition.
             usefulness_staking: Indirectly useful — high competition may indicate a healthy subnet
             usefulness_risk: Used as penalty factor in attractiveness score (weight 0.15)
             output_range: "[0.0, 1.0] — higher = more competition"
             known_issues: |
                 - Mixes units (count + alpha/day) — normalization hack, not principled
-                - 100 miners / 100 alpha has same density as 10 miners / 10 alpha but different dynamics
-                - Consider replacing with occupancy rate (active_miners / max_slots) or emission_per_miner
+                - Consider replacing with occupancy rate or emission_per_miner in future
             assumptions: |
                 - Is this formula meaningful or should we use a simpler alternative?
                 - Does this correlate with actual difficulty of earning on a subnet?

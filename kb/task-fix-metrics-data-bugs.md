@@ -1,6 +1,6 @@
 # Task: Fix Metrics Data Interpretation Bugs
 
-## Status: PLANNING
+## Status: COMPLETE
 
 ## Context
 - **Why**: Two metrics (Deregistration Risk, Competitive Density) are broken due to misinterpreting the SDK `active` field. The attractiveness score ceiling prevents differentiation between top subnets. These bugs make the ranking output unreliable for decision-making.
@@ -118,10 +118,25 @@ The SDK `active` field means "has set weights within `activity_cutoff` blocks" �
   Mitigation: Handler defaults to `num_uids=len(neurons)`, `max_uids=256` when fields missing
 
 ## Execution Log
-_(To be filled during implementation)_
+
+- 2026-05-18 21:17 Sub-task 1: Added num_uids, max_uids, validator_permit to SubnetCollector
+- 2026-05-18 21:18 Sub-tasks 2+4: Wrote 6 failing tests (TDD red phase confirmed)
+- 2026-05-18 21:19 Sub-tasks 3+5+6: Fixed deregistration risk, density, attractiveness score
+- 2026-05-18 21:20 Sub-task 7: Updated Processor handler with backward compat defaults
+- 2026-05-18 21:21 Sub-task 8: 186 tests pass (180 existing + 6 new)
+- 2026-05-18 21:25 Deployed to AWS — all 4 Lambdas updated, CloudFormation UPDATE_COMPLETE
+- 2026-05-18 21:26 Verified: new snapshots will include num_uids/max_uids as subnets re-collect
 
 ## Verification Results
-_(To be filled after implementation)_
+
+- Pass 1: 6/6 new tests pass, 180 existing tests pass (186 total)
+- Docker build + import smoke test: OK
+- Deploy: SUCCESS (67s)
+- Live verification: Pending — new code deployed, waiting for subnet re-collection cycles (1-4h)
 
 ## Handoff Notes
-_(To be filled after completion)_
+
+- Files modified: subnet_collector/handler.py, processor/metrics.py, processor/handler.py, finalizer/handler.py
+- Docs updated: kb/metrics-reference.md (regenerated), kb/task-fix-metrics-data-bugs.md
+- Decisions made: DEREG-001 (use num_uids/max_uids), DENSITY-001 (use earning miners)
+- Open: Verify live rankings show differentiated scores after full re-collection cycle (~4h)
