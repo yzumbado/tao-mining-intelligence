@@ -20,7 +20,7 @@ DEFAULT_THRESHOLDS: dict[str, float | int] = {
     "proportional_gini_max": 0.50,  # Gini < this → PROPORTIONAL
 
     # Daily briefing alert thresholds
-    "briefing_emission_change_pct": 0.10,  # >10% emission change → alert
+    "briefing_emission_change_pct": 0.01,  # >1% emission change → alert
     "briefing_reg_cost_change_pct": 0.20,  # >20% reg cost change → alert
     "briefing_rank_change_positions": 50,  # >50 rank positions → alert
 

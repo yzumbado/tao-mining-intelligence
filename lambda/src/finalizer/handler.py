@@ -242,13 +242,16 @@ def _generate_briefing(date: str, cycle_id: str,
                        all_metrics: dict[int, dict],
                        active_subnets: list[int]) -> dict:
     """Generate daily briefing with alerts."""
+    from src.thresholds import DEFAULT_THRESHOLDS
     alerts = []
 
-    # Detect emission changes > 10%
+    emission_threshold = DEFAULT_THRESHOLDS["briefing_emission_change_pct"]
+
+    # Detect emission changes exceeding threshold
     for netuid, metrics in all_metrics.items():
         emission = metrics.get("data", {}).get("emission_trend", {})
         change = emission.get("change_percent", 0.0)
-        if abs(change) > 0.10:
+        if abs(change) > emission_threshold:
             alerts.append({
                 "netuid": netuid,
                 "alert_type": "emission_change",
