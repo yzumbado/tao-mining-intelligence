@@ -193,6 +193,32 @@ lambda/src/
 - JSON Schema files in config/schemas/ (outputs are validated by Pydantic models instead)
 - LLM-powered Subnet Researcher
 
+### Open Bugs:
+- ⚠️ Staking APY overstated by ~1.6x (reports 11.1% for SN0, real is ~6.8%) — see `kb/bug-staking-apy-overstated.md`
+  - Root cause: formula uses gross validator yield without subtracting validator take rate or modeling root proportion
+  - Fix requires: chain data (tao_weight, per-validator take rate)
+
+### In Progress: Continuous Conformance System
+- **Design principle**: Human-agent collaboration — agents do continuous verification, humans triage and decide
+- **Concept validated**: 3 proofs completed, all produced actionable findings
+- **Build plan ready**: `kb/conformance-build-plan.md`
+- **Next action**: Phase A — inline post-conditions in Finalizer (30 lines, zero new infra)
+- **Key docs**:
+  - `kb/design-principle-agent-native-conformance.md` — philosophy + collaboration model
+  - `kb/conformance-concept-index.md` — 10 areas, 5 proofs, 7 design rules
+  - `kb/conformance-findings-schema.md` — finding data model (18 required fields, validated)
+  - `kb/conformance-proof2-commit-history.md` — git analysis patterns
+  - `kb/conformance-proof3-test-vs-production.md` — value range comparison
+  - `kb/conformance-build-plan.md` — Phase A-E implementation plan
+
+### Session 2026-05-19 Findings (context for next agent):
+- Output contract bugs: tests used idealized mock data that didn't match production shapes
+- Emission alert threshold was 10% but real emission changes are < 0.2% — lowered to 1%
+- 4 orphaned features in code (rental_profitability, entry_barrier, seven_day_trend, top_movers) — defined but never called
+- 2 dead code modules (orchestrator/, collector/) — never imported, still in container
+- competitive_density metric is effectively dead weight — never differentiates subnets in production (max 0.074, formula mixes units)
+- "feat without test" commit pattern predicted 2/3 of bugs found
+
 ## How to Run Tests
 
 ```bash
@@ -200,9 +226,9 @@ lambda/src/
 # If setting up fresh: /opt/homebrew/bin/python3.12 -m venv .venv
 
 source .venv/bin/activate
-.venv/bin/pytest tests/ -v          # All 180 tests
+.venv/bin/pytest tests/ -v          # All 193 tests
 .venv/bin/pytest tests/properties/  # Property tests only (79 tests)
-.venv/bin/pytest tests/unit/        # Unit tests only (76 tests)
+.venv/bin/pytest tests/unit/        # Unit tests only (83 tests, incl. 7 contract tests)
 .venv/bin/pytest tests/integration/ # E2E integration (2 tests)
 .venv/bin/pytest tests/cdk/         # CDK assertions (13 tests)
 python scripts/test_e2e_local.py    # Live chain test (needs internet)
