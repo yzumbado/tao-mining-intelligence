@@ -8,12 +8,10 @@ Properties verified:
 4. 7+ negative days but ≤25% emission decline → DECLINING (not death spiral)
 """
 
-import sys
 
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
-sys.path.insert(0, "lambda/src")
 
 from processor.metrics import MetricsEngine
 from models.enums import TaoflowStatus

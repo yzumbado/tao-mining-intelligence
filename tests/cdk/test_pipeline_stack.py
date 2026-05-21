@@ -10,8 +10,6 @@ Validates infrastructure configuration matches requirements:
 - No Lambda env var contains secrets (Req 38.4)
 """
 
-import sys
-sys.path.insert(0, "cdk")
 
 import aws_cdk as cdk
 from aws_cdk.assertions import Template, Match

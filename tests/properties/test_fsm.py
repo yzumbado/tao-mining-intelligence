@@ -8,7 +8,6 @@ Validates Requirements 7.3-7.7:
 """
 
 import os
-import sys
 from unittest.mock import patch
 
 import boto3
@@ -17,8 +16,6 @@ from hypothesis import given, settings, assume, HealthCheck
 from hypothesis import strategies as st
 from moto import mock_aws
 
-sys.path.insert(0, "lambda")
-sys.path.insert(0, "lambda/src")
 
 # Valid FSM transitions
 VALID_TRANSITIONS = {

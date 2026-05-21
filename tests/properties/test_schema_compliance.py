@@ -8,13 +8,11 @@ Properties verified:
 4. Block numbers are positive integers
 """
 
-import sys
 from datetime import datetime, timezone
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-sys.path.insert(0, "lambda/src")
 
 from models.schemas import (
     MetadataHeader,

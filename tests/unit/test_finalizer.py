@@ -12,7 +12,6 @@ Tests cover:
 
 import json
 import os
-import sys
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -20,8 +19,6 @@ import boto3
 import pytest
 from moto import mock_aws
 
-sys.path.insert(0, "lambda")
-sys.path.insert(0, "lambda/src")
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +167,7 @@ def _seed_derived_metrics(date: str = "2026-05-15", netuids: list[int] = None):
         # Vary metrics so rankings are deterministic
         metrics = _make_derived_metrics(
             netuid, date,
-            net_tao_yield=1.0 - i * 0.3,  # SN1=1.0, SN2=0.7, SN3=0.4
+            net_tao_yield=50.0 - i * 20.0,  # SN1=50.0, SN2=30.0, SN3=10.0
             days_to_recoup=5.0 + i * 5.0,
             competitive_density=0.2 + i * 0.1,
             emission_change=0.15 if netuid == 2 else 0.03,  # SN2 has >10% change

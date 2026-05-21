@@ -8,12 +8,10 @@ Properties verified:
 4. daily_profit = (yield × price) - cost
 """
 
-import sys
 
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
-sys.path.insert(0, "lambda/src")
 
 from processor.metrics import MetricsEngine
 

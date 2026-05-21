@@ -2,11 +2,9 @@
 
 import json
 import logging
-import sys
 
 import pytest
 
-sys.path.insert(0, "lambda/src")
 
 from instrumentation import (
     init_tracing,

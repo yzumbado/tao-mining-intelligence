@@ -11,7 +11,6 @@ Tests cover:
 
 import json
 import os
-import sys
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -19,8 +18,6 @@ import boto3
 import pytest
 from moto import mock_aws
 
-sys.path.insert(0, "lambda")
-sys.path.insert(0, "lambda/src")
 
 
 # ---------------------------------------------------------------------------

@@ -9,13 +9,10 @@ Tests cover:
 - Generated HTML is valid (no unclosed tags in key sections)
 """
 
-import sys
 from datetime import datetime, timezone, timedelta
 
 import pytest
 
-sys.path.insert(0, "lambda")
-sys.path.insert(0, "lambda/src")
 
 
 # ---------------------------------------------------------------------------

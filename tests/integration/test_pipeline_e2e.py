@@ -13,8 +13,6 @@ import boto3
 import pytest
 from moto import mock_aws
 
-sys.path.insert(0, "lambda")
-sys.path.insert(0, "lambda/src")
 
 _AWS_ENV = {
     "PIPELINE_ENV": "aws",

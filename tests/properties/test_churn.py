@@ -8,12 +8,10 @@ Properties verified:
 4. trend: INCREASING when net > +5%, DECREASING when < -5%, STABLE otherwise
 """
 
-import sys
 
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
-sys.path.insert(0, "lambda/src")
 
 from processor.metrics import MetricsEngine
 from models.enums import CompetitionTrend

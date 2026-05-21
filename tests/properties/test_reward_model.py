@@ -8,12 +8,10 @@ Properties verified:
 4. top_3_concentration = sum(top_3) / sum(all)
 """
 
-import sys
 
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
-sys.path.insert(0, "lambda/src")
 
 from processor.metrics import MetricsEngine
 from models.enums import RewardModel

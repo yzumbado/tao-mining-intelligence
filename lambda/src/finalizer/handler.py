@@ -204,11 +204,15 @@ def _compute_attractiveness_score(net_tao_yield: float, days_to_recoup: float,
     """Compute composite attractiveness score.
 
     Higher is better. Factors:
-    - net_tao_yield (weight: 0.4) — primary driver
-    - days_to_recoup inverse (weight: 0.25) — faster payback = better
-    - competitive_density inverse (weight: 0.15) — less competition = better
-    - emission_trend (weight: 0.1) — growing emissions = better
-    - taoflow health (weight: 0.1) — healthy = bonus, death spiral = penalty
+    - net_tao_yield (weight: 0.55) — primary driver
+    - days_to_recoup inverse (weight: 0.35) — faster payback = better
+    - emission_trend (weight: 0.10) — growing emissions = better
+
+    NOTE: competitive_density (weight: 0) and taoflow (weight: 0) are neutralized.
+    competitive_density mixes units and never differentiates subnets (max 0.074).
+    taoflow always returns HEALTHY (no stake history accumulated yet).
+    Re-enable when: competitive_density is replaced with occupancy_rate,
+    and taoflow has 7+ days of stake history. See kb/backlog.md items #12, #13.
     """
     # Normalize yield (assume max ~100 TAO/day is excellent)
     yield_score = min(net_tao_yield / 100.0, 1.0)
@@ -219,18 +223,10 @@ def _compute_attractiveness_score(net_tao_yield: float, days_to_recoup: float,
     else:
         recoup_score = max(0.0, 1.0 - (days_to_recoup / 365.0))
 
-    # Density inverse (0 = no competition = perfect)
-    density_score = 1.0 - min(competitive_density, 1.0)
-
     # Emission trend (positive = good, capped at ±50%)
     trend_score = 0.5 + min(max(emission_change, -0.5), 0.5)
 
-    # Taoflow bonus/penalty
-    taoflow_score = {"HEALTHY": 1.0, "DECLINING": 0.3,
-                     "DEATH_SPIRAL_RISK": 0.0}.get(taoflow_status, 0.5)
-
-    return (yield_score * 0.4 + recoup_score * 0.25 + density_score * 0.15 +
-            trend_score * 0.1 + taoflow_score * 0.1)
+    return (yield_score * 0.55 + recoup_score * 0.35 + trend_score * 0.10)
 
 
 # ---------------------------------------------------------------------------

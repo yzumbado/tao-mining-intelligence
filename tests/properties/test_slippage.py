@@ -8,12 +8,10 @@ Properties verified:
 4. Approaches 1.0 as sell amount → infinity relative to pool
 """
 
-import sys
 
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
-sys.path.insert(0, "lambda/src")
 
 from processor.metrics import MetricsEngine
 

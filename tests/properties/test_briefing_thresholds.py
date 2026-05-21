@@ -8,12 +8,10 @@ Properties verified:
 4. Rank changes > threshold ARE included
 """
 
-import sys
 
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
-sys.path.insert(0, "lambda/src")
 
 
 def filter_briefing_alerts(

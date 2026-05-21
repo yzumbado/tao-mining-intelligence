@@ -1,8 +1,6 @@
 """Unit tests for the data validation module."""
 
-import sys
 
-sys.path.insert(0, "lambda/src")
 
 from validation import validate_metagraph, validate_registration_cost, validate_alpha_prices
 

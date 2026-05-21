@@ -1,11 +1,9 @@
 """Unit tests for the circuit breaker module."""
 
 import asyncio
-import sys
 
 import pytest
 
-sys.path.insert(0, "lambda/src")
 
 from circuit_breaker import CircuitBreaker, with_timeout, get_boto_config
 

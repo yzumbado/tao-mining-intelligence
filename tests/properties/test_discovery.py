@@ -6,13 +6,10 @@ Validates Requirements 8.1-8.3:
 - After update, stored list equals on-chain list
 """
 
-import sys
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-sys.path.insert(0, "lambda")
-sys.path.insert(0, "lambda/src")
 
 
 # Strategy: generate subnet ID sets (netuids are 0-1024 in practice)

@@ -6,8 +6,6 @@ Tests the bugs found in live data analysis (2026-05-18):
 3. Attractiveness score ceiling at 0.950 (yield cap too low)
 """
 
-import sys
-sys.path.insert(0, "lambda")
 
 from src.models.schemas import Neuron
 from src.processor.metrics import MetricsEngine

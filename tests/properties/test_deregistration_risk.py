@@ -8,13 +8,11 @@ Properties verified:
 4. On full subnets, risk scores are monotonically non-increasing as emission rank improves
 """
 
-import sys
 
 import pytest
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
-sys.path.insert(0, "lambda/src")
 
 from processor.metrics import compute_deregistration_risk
 

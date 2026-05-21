@@ -7,12 +7,10 @@ Properties verified:
 3. All required fields are present in each entry
 """
 
-import sys
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-sys.path.insert(0, "lambda/src")
 
 
 # Simple ranking function that sorts subnets by score
