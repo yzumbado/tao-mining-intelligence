@@ -185,6 +185,10 @@ lambda/src/
 - ✅ SNS alerting: staleness alarm → yzumbado@gmail.com
 - ✅ Auto-generated metrics reference: kb/metrics-reference.md from code docstrings
 - ✅ Agent plan execution research: kb/agent-plan-execution-research.md
+- ✅ Self-mining risk detection: compute_self_mining_risk() — 4 signals, 7 property tests
+- ✅ Proven ecosystem metrics: real APY, Net TAO Flow (EMA), VTrust surfacing, daily stake accumulation
+- ✅ Attractiveness score redesign: risk-adjusted formula (yield×0.30 + flow×0.25 + emission×0.25 + depth×0.20 × self_mining_penalty)
+- ✅ Test audit + fixes: 2 CRITICAL (S3 path mismatch, missing mock fields) + 4 HIGH (ranking toy test, dereg always 0, unrealistic emissions, threshold by accident)
 
 ### Descoped (Phase 2+):
 - `subnet.html` and `health.html` templates (4 templates shipped, 2 deferred)
@@ -211,6 +215,16 @@ lambda/src/
   - `kb/conformance-proof3-test-vs-production.md` — value range comparison
   - `kb/conformance-build-plan.md` — Phase A-E implementation plan
 
+### Session 2026-05-25 Findings (context for next agent):
+- SN104 investigation: self-mining subnet (1 miner, 1 validator, same coldkey, "for sale" description) — scored 0.613 mid-pack
+- Const announced emission blocking for self-mining/abandoned/fraudulent subnets
+- Ecosystem research: taostats, TAO Institute (SRI), Taoculator all use Net TAO Flow, real APY, VTrust, pool depth
+- Our attractiveness score was effectively just net_tao_yield (recoup≈1.0, trend≈0.5 for all subnets)
+- Redesigned to risk-adjusted formula with self-mining penalty — SN104 would now score near 0
+- Test audit found 2 CRITICAL lies: alpha_price never reached processor (wrong S3 path), self_mining_risk never tested non-zero
+- Daily stake accumulation started — Net TAO Flow will activate after 7 days of data
+- 6 MEDIUM test lies remain (see backlog or ask for details)
+
 ### Session 2026-05-19 Findings (context for next agent):
 - Output contract bugs: tests used idealized mock data that didn't match production shapes
 - Emission alert threshold was 10% but real emission changes are < 0.2% — lowered to 1%
@@ -226,9 +240,9 @@ lambda/src/
 # If setting up fresh: /opt/homebrew/bin/python3.12 -m venv .venv
 
 source .venv/bin/activate
-.venv/bin/pytest tests/ -v          # All 193 tests
-.venv/bin/pytest tests/properties/  # Property tests only (79 tests)
-.venv/bin/pytest tests/unit/        # Unit tests only (83 tests, incl. 7 contract tests)
+.venv/bin/pytest tests/ -v          # All 206 tests
+.venv/bin/pytest tests/properties/  # Property tests only (96 tests)
+.venv/bin/pytest tests/unit/        # Unit tests only (87 tests)
 .venv/bin/pytest tests/integration/ # E2E integration (2 tests)
 .venv/bin/pytest tests/cdk/         # CDK assertions (13 tests)
 python scripts/test_e2e_local.py    # Live chain test (needs internet)

@@ -52,7 +52,7 @@
 
 ## P1 — Next Session (Important, Moderate Effort)
 
-### 6. Redesign Attractiveness Score as Risk-Adjusted Yield
+### 6. ~~Redesign Attractiveness Score as Risk-Adjusted Yield~~ ✅ DONE (2026-05-25)
 - **Effort**: M (1-2 hours)
 - **Risk**: Current score is misleading — ranks self-mining scams (SN104) mid-pack, doesn't penalize WTA subnets where you'd earn 0, ignores liquidity
 - **Source**: Live data analysis (2026-05-25) + self-mining risk metric implementation
