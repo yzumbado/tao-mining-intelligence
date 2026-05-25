@@ -442,6 +442,52 @@ class TestBriefingContent:
 
         assert 3 in briefing.get("new_subnets", [])
 
+    @mock_aws
+    def test_2_percent_emission_change_triggers_alert(self, aws_env, lambda_context):
+        """2% emission change exceeds the 1% threshold and must trigger an alert."""
+        table = _create_dynamodb_table()
+        _create_s3_bucket()
+        _seed_cycle_complete(table, subnets_total=1)
+        _seed_active_subnets(table, netuids=[1])
+
+        s3 = boto3.client("s3", region_name="us-east-1")
+        bucket = os.environ.get("BUCKET_NAME", "tao-intelligence-test")
+        metrics = _make_derived_metrics(1, "2026-05-15", emission_change=0.02)
+        s3.put_object(Bucket=bucket, Key="derived/metrics/2026-05-15/1.json",
+                      Body=json.dumps(metrics))
+
+        from src.finalizer.handler import handle
+        handle(_make_completion_sqs_event(), lambda_context)
+
+        resp = s3.get_object(Bucket=bucket, Key="derived/briefings/2026-05-15.json")
+        briefing = json.loads(resp["Body"].read())
+        emission_alerts = [a for a in briefing["alerts"]
+                           if a["alert_type"] == "emission_change"]
+        assert len(emission_alerts) == 1, f"2% change should trigger alert, got {emission_alerts}"
+
+    @mock_aws
+    def test_half_percent_emission_change_does_not_trigger(self, aws_env, lambda_context):
+        """0.5% emission change is below the 1% threshold and must NOT trigger."""
+        table = _create_dynamodb_table()
+        _create_s3_bucket()
+        _seed_cycle_complete(table, subnets_total=1)
+        _seed_active_subnets(table, netuids=[1])
+
+        s3 = boto3.client("s3", region_name="us-east-1")
+        bucket = os.environ.get("BUCKET_NAME", "tao-intelligence-test")
+        metrics = _make_derived_metrics(1, "2026-05-15", emission_change=0.005)
+        s3.put_object(Bucket=bucket, Key="derived/metrics/2026-05-15/1.json",
+                      Body=json.dumps(metrics))
+
+        from src.finalizer.handler import handle
+        handle(_make_completion_sqs_event(), lambda_context)
+
+        resp = s3.get_object(Bucket=bucket, Key="derived/briefings/2026-05-15.json")
+        briefing = json.loads(resp["Body"].read())
+        emission_alerts = [a for a in briefing["alerts"]
+                           if a["alert_type"] == "emission_change"]
+        assert len(emission_alerts) == 0, f"0.5% change should NOT trigger, got {emission_alerts}"
+
 
 # ---------------------------------------------------------------------------
 # Test: Rankings sorted correctly

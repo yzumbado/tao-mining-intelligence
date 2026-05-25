@@ -60,6 +60,8 @@ def _make_raw_snapshot(netuid: int, date: str, neurons: list[dict] = None) -> di
             "collected_at": f"{date}T00:05:00+00:00",
             "source_block_number": 5000000,
             "neuron_count": len(neurons),
+            "num_uids": len(neurons),
+            "max_uids": len(neurons),
         },
         "data": {"neurons": neurons},
     }
@@ -294,6 +296,85 @@ class TestProcessorHappyPath:
 
         resp = table.get_item(Key={"PK": "CYCLE#2026-05-15", "SK": "STATUS"})
         assert resp["Item"]["subnets_complete"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Test: Realistic WTA emission distribution (most miners earn 0)
+# ---------------------------------------------------------------------------
+
+
+class TestRealisticWTADistribution:
+    """Verify metrics handle production-like WTA subnets where most miners earn 0."""
+
+    @mock_aws
+    def test_wta_subnet_with_mostly_zero_emission(self):
+        """256-neuron full subnet where only 4 miners earn — like SN1 in production."""
+        os.environ.update({"PIPELINE_ENV": "aws", "TABLE_NAME": "tao-pipeline-test",
+                           "BUCKET_NAME": "tao-intelligence-test",
+                           "SUBNET_PROCESSED_TOPIC_ARN": ""})
+        _create_dynamodb_table()
+        _create_s3_bucket()
+        _reset_handler()
+
+        # 4 earning miners with unequal emission (realistic WTA: top miner dominates)
+        # 252 zero-emission miners (the common case on WTA subnets)
+        neurons = []
+        earning_emissions = [0.008, 0.004, 0.002, 0.001]  # top miner gets 53%
+        for i, em in enumerate(earning_emissions):
+            neurons.append(_make_neuron(i, emission=em, incentive=0.25,
+                                        block_at_registration=4000000))
+        for i in range(4, 256):
+            neurons.append(_make_neuron(i, emission=0.0, incentive=0.0,
+                                        block_at_registration=4900000))
+
+        # Override snapshot to have full subnet
+        s3 = boto3.client("s3", region_name="us-east-1")
+        bucket = os.environ["BUCKET_NAME"]
+        snapshot = {
+            "metadata": {"netuid": 1, "cycle_id": "2026-05-15",
+                         "collected_at": "2026-05-15T00:05:00+00:00",
+                         "source_block_number": 5000000, "neuron_count": 256,
+                         "num_uids": 256, "max_uids": 256},
+            "data": {"neurons": neurons},
+        }
+        alpha = {"metadata": {}, "data": {"alpha_tao_price": 0.05, "pool_tao_liquidity": 1000.0}}
+        reg = {"metadata": {}, "data": {"registration_cost_tao": 1.0}}
+        hyper = {"metadata": {}, "data": {"tempo": 360, "immunity_period": 7200}}
+
+        s3.put_object(Bucket=bucket, Key="raw/metagraph/2026-05-15/1.json",
+                      Body=json.dumps(snapshot))
+        s3.put_object(Bucket=bucket, Key="raw/alpha-prices/2026-05-15/1.json",
+                      Body=json.dumps(alpha))
+        s3.put_object(Bucket=bucket, Key="raw/registration-costs/2026-05-15/1.json",
+                      Body=json.dumps(reg))
+        s3.put_object(Bucket=bucket, Key="raw/hyperparameters/2026-05-15/1.json",
+                      Body=json.dumps(hyper))
+
+        from src.processor.handler import handle
+        result = handle(_make_sqs_event(), None)
+        assert result["status"] == "complete"
+
+        # Read derived output and validate WTA behavior
+        obj = s3.get_object(Bucket=bucket, Key="derived/metrics/2026-05-15/1.json")
+        derived = json.loads(obj["Body"].read())
+        data = derived["data"]
+
+        # Gini should be non-trivial (inequality among earners)
+        gini = data["reward_distribution"]["gini_coefficient"]
+        assert gini > 0.2, f"WTA subnet with unequal earners should have Gini > 0.2, got {gini}"
+
+        # Reward model should be WTA (top 3 of 4 earners capture >70%)
+        assert data["reward_distribution"]["model"] == "WINNER_TAKES_ALL"
+
+        # ROI should use earning miners only (4 miners, not 256)
+        roi = data["roi_estimate"]
+        assert roi["net_tao_yield_per_day"] > 0, "Yield should be positive"
+
+        # Deregistration risk should be non-zero for bottom miners (subnet is full)
+        dereg = data["deregistration_risk"]
+        assert len(dereg) > 0, "Should have deregistration risk entries"
+        risk_scores = [d["risk_score"] for d in dereg]
+        assert max(risk_scores) > 0, "Full subnet should have non-zero deregistration risk"
 
 
 # ---------------------------------------------------------------------------
