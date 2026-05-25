@@ -287,10 +287,12 @@ def _generate_staking_rankings(all_metrics: dict[int, dict]) -> list[dict]:
     """Generate staking rankings sorted by net APY.
 
     Uses validator landscape data from derived metrics to compute
-    yield per TAO staked, accounting for entry/exit slippage.
+    yield per TAO staked, accounting for entry/exit slippage and
+    validator take rate (flat 18% interim estimate).
     """
     from src.processor.metrics import MetricsEngine
-    from src.models.schemas import Neuron
+
+    VALIDATOR_TAKE_RATE = 0.18  # Interim flat estimate (real is per-validator)
 
     staking_ranks = []
     for netuid, metrics in all_metrics.items():
@@ -299,6 +301,7 @@ def _generate_staking_rankings(all_metrics: dict[int, dict]) -> list[dict]:
         roi = data.get("roi_estimate", {})
 
         alpha_price = _safe_float(roi.get("alpha_tao_rate", 0.0))
+        pool_tao = _safe_float(roi.get("pool_tao_liquidity", 0.0))
         total_stake = _safe_float(vl.get("total_validator_stake", 0.0))
         validators = vl.get("active_validators", 0)
         net_yield = _safe_float(vl.get("net_tao_yield_per_validator_per_day", 0.0))
@@ -306,21 +309,20 @@ def _generate_staking_rankings(all_metrics: dict[int, dict]) -> list[dict]:
         if validators == 0 or alpha_price <= 0 or total_stake <= 0:
             continue
 
-        # Compute total daily validator emission in TAO
-        total_daily_tao = net_yield * validators
+        # Total daily validator emission in TAO (after take rate)
+        total_daily_tao = net_yield * validators * (1.0 - VALIDATOR_TAKE_RATE)
 
-        # Simple yield per unit of stake (no slippage — for ranking purposes)
+        # Yield per unit of stake
         yield_per_stake = total_daily_tao / total_stake
         apy = yield_per_stake * 365 * 100
 
-        # Estimate entry slippage for 10 TAO stake
-        alpha_to_buy = 10.0 / alpha_price if alpha_price > 0 else 0
-        pool_tao = _safe_float(data.get("roi_estimate", {}).get("alpha_tao_rate", 0)) * 1000  # rough pool estimate
-        # Use a simplified slippage: small stakes have negligible slippage
-        entry_slippage = min(alpha_to_buy / (alpha_to_buy + total_stake) if total_stake > 0 else 0, 0.5)
+        # Entry slippage for 10 TAO using actual pool liquidity
+        entry_slippage = MetricsEngine._estimate_slippage(
+            10.0 / alpha_price if alpha_price > 0 else 0,
+            alpha_price, pool_tao) if pool_tao > 0 else 0.0
 
         # Break-even: how much can alpha drop annually before you lose money
-        break_even = apy / 100.0  # if APY is 50%, alpha can drop 50% and you break even
+        break_even = apy / 100.0
 
         staking_ranks.append({
             "netuid": netuid,
