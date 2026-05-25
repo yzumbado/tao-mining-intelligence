@@ -1460,6 +1460,56 @@ class MetricsEngine:
         return max(0.0, min(1.0, raw * penalty))
 
     # =========================================================================
+    # Validator Concentration Risk
+    # =========================================================================
+
+    @staticmethod
+    def compute_validator_concentration_risk(
+        active_validators: int,
+        top_1_stake_share: float,
+    ) -> dict:
+        """Compute validator concentration risk as a standalone metric.
+
+        Metric:
+            name: Validator Concentration Risk
+            status: PROVEN
+            hypothesis: |
+                Subnets with fewer validators or extreme stake concentration are
+                fragile — if the dominant validator leaves, scoring collapses.
+                This is independent of self-mining (a subnet can be concentrated
+                but legitimate). Used for staking decisions.
+            formula: |
+                IF active_validators == 1: risk = 1.0
+                ELIF top_1_stake_share > 0.9: risk = 0.7
+                ELIF top_1_stake_share > 0.7: risk = 0.4
+                ELIF top_1_stake_share > 0.5: risk = 0.2
+                ELSE: risk = 0.0
+            output_range: "risk: [0.0, 1.0]; tier: {critical, high, medium, low, healthy}"
+        """
+        if active_validators <= 1:
+            risk = 1.0
+            tier = "critical"
+        elif top_1_stake_share > 0.9:
+            risk = 0.7
+            tier = "high"
+        elif top_1_stake_share > 0.7:
+            risk = 0.4
+            tier = "medium"
+        elif top_1_stake_share > 0.5:
+            risk = 0.2
+            tier = "low"
+        else:
+            risk = 0.0
+            tier = "healthy"
+
+        return {
+            "risk": risk,
+            "tier": tier,
+            "active_validators": active_validators,
+            "top_1_stake_share": top_1_stake_share,
+        }
+
+    # =========================================================================
     # Self-Mining Detection Heuristic
     # =========================================================================
 

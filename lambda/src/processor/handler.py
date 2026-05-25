@@ -165,6 +165,11 @@ def handle(event: dict, context: Any) -> dict:
         real_apy = MetricsEngine.compute_real_apy(total_val_emission, total_val_stake, alpha_price)
         metrics_computed.append("real_apy")
 
+        # Validator concentration risk (standalone metric for staking decisions)
+        concentration_risk = MetricsEngine.compute_validator_concentration_risk(
+            validator_landscape.active_validators, validator_landscape.top_1_stake_share)
+        metrics_computed.append("concentration_risk")
+
         # Accumulate daily stake total for Net TAO Flow (one write per subnet per day)
         _store_daily_stake(netuid, date, total_val_stake)
 
@@ -177,6 +182,7 @@ def handle(event: dict, context: Any) -> dict:
             netuid, date, dereg_risks, competitive_density, emission_trend,
             roi, reward_model, gini, top_3, taoflow, churn, validator_landscape,
             self_mining_risk=self_mining_risk,
+            concentration_risk=concentration_risk,
             real_apy=real_apy,
             pool_tao_liquidity=pool_tao,
             source_block_number=current_block)
@@ -341,6 +347,7 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                           emission_trend, roi, reward_model, gini, top_3,
                           taoflow, churn, validator_landscape,
                           self_mining_risk: Optional[dict] = None,
+                          concentration_risk: Optional[dict] = None,
                           real_apy: float = 0.0,
                           pool_tao_liquidity: float = 0.0,
                           source_block_number: int = 0) -> dict:
@@ -407,6 +414,7 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                 "min_vtrust": validator_landscape.min_vtrust,
             },
             "self_mining_risk": self_mining_risk or {"risk_score": 0.0, "signals": []},
+            "concentration_risk": concentration_risk or {"risk": 0.0, "tier": "healthy"},
             "real_apy_percent": real_apy,
         },
     }
