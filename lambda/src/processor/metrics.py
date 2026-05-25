@@ -945,6 +945,8 @@ class MetricsEngine:
                 concentrated=False,
                 avg_validator_activity_blocks=0.0,
                 net_tao_yield_per_validator_per_day=0.0,
+                avg_vtrust=0.0,
+                min_vtrust=0.0,
             )
 
         total_stake = sum(v.stake for v in validators)
@@ -967,6 +969,11 @@ class MetricsEngine:
         avg_emission = sum(v.emission for v in validators) / len(validators)
         net_yield = avg_emission * alpha_tao_price
 
+        # VTrust: how well validators align with consensus
+        vtrust_values = [v.validator_trust for v in validators]
+        avg_vtrust = sum(vtrust_values) / len(vtrust_values)
+        min_vtrust = min(vtrust_values)
+
         return ValidatorLandscape(
             active_validators=len(validators),
             total_validator_stake=total_stake,
@@ -975,6 +982,8 @@ class MetricsEngine:
             concentrated=top_1_share > 0.5,
             avg_validator_activity_blocks=avg_activity,
             net_tao_yield_per_validator_per_day=net_yield,
+            avg_vtrust=avg_vtrust,
+            min_vtrust=min_vtrust,
         )
 
 
@@ -1324,6 +1333,131 @@ class MetricsEngine:
             "active_validators": len(validators),
             "break_even_alpha_depreciation": break_even,
         }
+
+    # =========================================================================
+    # Real 1D APY (from actual emission snapshots)
+    # =========================================================================
+
+    @staticmethod
+    def compute_real_apy(
+        total_validator_emission_daily: float,
+        total_validator_stake: float,
+        alpha_tao_price: float,
+    ) -> float:
+        """Compute real annualized yield from actual daily emission data.
+
+        Metric:
+            name: Real 1D APY
+            status: PROVEN
+            hypothesis: |
+                Instead of estimating yield theoretically, compute it from actual
+                observed emissions. This is what taostats calls "1D APY" — actual
+                returns in the last day extrapolated to a year.
+            formula: |
+                daily_yield_rate = (total_validator_emission × alpha_price) / total_stake
+                apy = daily_yield_rate × 365 × 100
+            output_range: "[0.0, ∞) percent — typically 0.5% to 50%"
+            known_issues: |
+                - Extrapolates one day to a year (volatile day = misleading APY)
+                - Does not subtract validator take rate
+        """
+        if total_validator_stake <= 0 or alpha_tao_price <= 0 or total_validator_emission_daily <= 0:
+            return 0.0
+        daily_yield_rate = (total_validator_emission_daily * alpha_tao_price) / total_validator_stake
+        return daily_yield_rate * 365.0 * 100.0
+
+    # =========================================================================
+    # Net TAO Flow (30-day EMA)
+    # =========================================================================
+
+    @staticmethod
+    def compute_net_tao_flow(stake_history: list[float]) -> dict:
+        """Compute net TAO flow with 30-day exponential moving average.
+
+        Metric:
+            name: Net TAO Flow (EMA)
+            status: PROVEN
+            hypothesis: |
+                Net TAO Flow measures staking inflows minus outflows. Since May 2026,
+                this directly determines subnet emission allocation. A 30-day EMA
+                smooths daily noise. Positive = growing subnet, negative = dying.
+            formula: |
+                daily_flows = [stake[i] - stake[i-1] for i in range(1, len)]
+                EMA with half-life 30 days: alpha = 1 - exp(-ln(2)/30)
+                ema = exponential_moving_average(daily_flows, alpha)
+            output_range: "net_flow: (-∞, ∞) TAO/day; ema_flow: (-∞, ∞) smoothed"
+        """
+        if len(stake_history) < 2:
+            return {"net_flow": 0.0, "ema_flow": 0.0, "days_of_data": len(stake_history)}
+
+        # Compute daily flows
+        daily_flows = [stake_history[i] - stake_history[i - 1]
+                       for i in range(1, len(stake_history))]
+
+        net_flow = daily_flows[-1] if daily_flows else 0.0
+
+        # EMA with 30-day half-life: alpha = 1 - exp(-ln2/30) ≈ 0.0228
+        import math
+        alpha = 1.0 - math.exp(-math.log(2) / 30.0)
+
+        ema = daily_flows[0]
+        for flow in daily_flows[1:]:
+            ema = alpha * flow + (1.0 - alpha) * ema
+
+        return {"net_flow": net_flow, "ema_flow": ema, "days_of_data": len(stake_history)}
+
+    # =========================================================================
+    # Risk-Adjusted Attractiveness Score
+    # =========================================================================
+
+    @staticmethod
+    def compute_attractiveness_score(
+        net_tao_yield: float,
+        emission_share: float,
+        pool_depth_tao: float,
+        self_mining_risk: float,
+        net_flow_ema: float = 0.0,
+    ) -> float:
+        """Compute risk-adjusted attractiveness score.
+
+        Metric:
+            name: Attractiveness Score (Risk-Adjusted)
+            status: HYPOTHESIS
+            hypothesis: |
+                Inspired by Taoculator's Subnet Health Score. Combines yield, flow,
+                emission share, and pool depth with multiplicative self-mining penalty.
+                Answers "should I enter this subnet?" not just "how much does it emit?"
+            formula: |
+                yield_score = min(net_tao_yield / 200, 1.0)  (200 TAO/day = ceiling)
+                flow_score = sigmoid(net_flow_ema / 500)  (normalized to [0,1])
+                emission_score = min(emission_share / 0.02, 1.0)  (2% share = max)
+                depth_score = min(pool_depth_tao / 20000, 1.0)  (20k TAO = deep)
+                raw = yield×0.30 + flow×0.25 + emission×0.25 + depth×0.20
+                score = raw × (1.0 - self_mining_risk)
+            output_range: "[0.0, 1.0]"
+        """
+        import math
+
+        # Yield component (0-1): 200 TAO/day = perfect
+        yield_score = min(max(net_tao_yield, 0.0) / 200.0, 1.0)
+
+        # Flow component (0-1): sigmoid centered at 0, scaled by 500 TAO/day
+        flow_score = 1.0 / (1.0 + math.exp(-net_flow_ema / 500.0))
+
+        # Emission share component (0-1): 2% of network = perfect
+        emission_score = min(max(emission_share, 0.0) / 0.02, 1.0)
+
+        # Pool depth component (0-1): 20k TAO liquidity = deep enough
+        depth_score = min(max(pool_depth_tao, 0.0) / 20000.0, 1.0)
+
+        # Weighted combination
+        raw = (yield_score * 0.30 + flow_score * 0.25 +
+               emission_score * 0.25 + depth_score * 0.20)
+
+        # Multiplicative self-mining penalty
+        penalty = 1.0 - min(max(self_mining_risk, 0.0), 1.0)
+
+        return max(0.0, min(1.0, raw * penalty))
 
     # =========================================================================
     # Self-Mining Detection Heuristic

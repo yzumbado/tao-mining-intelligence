@@ -147,17 +147,17 @@ class TestAttractivenessScoreCeiling:
         """Bug: Both 85 TAO/day and 18 TAO/day score 0.950 due to cap at 5 TAO/day.
         Fix: Raise normalization ceiling so scores differentiate.
         """
-        from src.finalizer.handler import _compute_attractiveness_score
+        from src.processor.metrics import MetricsEngine
 
-        score_high = _compute_attractiveness_score(
-            net_tao_yield=85.0, days_to_recoup=0.001,
-            competitive_density=0.0, emission_change=0.0,
-            taoflow_status="HEALTHY")
+        score_high = MetricsEngine.compute_attractiveness_score(
+            net_tao_yield=85.0, emission_share=0.01,
+            pool_depth_tao=5000.0, self_mining_risk=0.0,
+            net_flow_ema=0.0)
 
-        score_low = _compute_attractiveness_score(
-            net_tao_yield=18.0, days_to_recoup=0.001,
-            competitive_density=0.0, emission_change=0.0,
-            taoflow_status="HEALTHY")
+        score_low = MetricsEngine.compute_attractiveness_score(
+            net_tao_yield=18.0, emission_share=0.01,
+            pool_depth_tao=5000.0, self_mining_risk=0.0,
+            net_flow_ema=0.0)
 
         assert score_high > score_low, (
             f"85 TAO/day ({score_high:.4f}) should score higher than "

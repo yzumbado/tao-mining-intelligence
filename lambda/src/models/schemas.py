@@ -365,6 +365,8 @@ class ValidatorLandscape(BaseModel):
     concentrated: bool = Field(description="True if top-1 validator holds >50% stake")
     avg_validator_activity_blocks: float = Field(ge=0.0)
     net_tao_yield_per_validator_per_day: float = Field(ge=0.0)
+    avg_vtrust: float = Field(default=0.0, ge=0.0, le=1.0, description="Average VTrust across validators")
+    min_vtrust: float = Field(default=0.0, ge=0.0, le=1.0, description="Minimum VTrust (weakest validator)")
 
 
 class RentalProfitability(BaseModel):

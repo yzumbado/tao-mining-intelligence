@@ -158,6 +158,16 @@ def handle(event: dict, context: Any) -> dict:
         validator_landscape = MetricsEngine.compute_validator_landscape(neurons, alpha_price)
         metrics_computed.append("validator_landscape")
 
+        # Real 1D APY (from actual emission data)
+        validators = [n for n in neurons if n.dividends > 0]
+        total_val_emission = sum(v.emission for v in validators)
+        total_val_stake = sum(v.alpha_stake for v in validators)
+        real_apy = MetricsEngine.compute_real_apy(total_val_emission, total_val_stake, alpha_price)
+        metrics_computed.append("real_apy")
+
+        # Accumulate daily stake total for Net TAO Flow (one write per subnet per day)
+        _store_daily_stake(netuid, date, total_val_stake)
+
         # Self-mining risk detection
         self_mining_risk = MetricsEngine.compute_self_mining_risk(neurons)
         metrics_computed.append("self_mining_risk")
@@ -167,6 +177,7 @@ def handle(event: dict, context: Any) -> dict:
             netuid, date, dereg_risks, competitive_density, emission_trend,
             roi, reward_model, gini, top_3, taoflow, churn, validator_landscape,
             self_mining_risk=self_mining_risk,
+            real_apy=real_apy,
             source_block_number=current_block)
         _storage.store_snapshot(
             _storage.get_date_path("derived/metrics", date, netuid), derived_data)
@@ -284,6 +295,24 @@ def _extract_immunity_period(hyperparams: Optional[dict]) -> int:
     return hyperparams.get("data", {}).get("immunity_period", 7200)
 
 
+def _store_daily_stake(netuid: int, date: str, total_stake: float) -> None:
+    """Store daily stake total for Net TAO Flow computation.
+
+    One write per subnet per day. After 7+ days, enables flow EMA calculation.
+    PK: STAKE_HISTORY#{netuid}, SK: {date}
+    """
+    try:
+        table = _state_manager._table
+        table.put_item(Item=_float_to_decimal({
+            "PK": f"STAKE_HISTORY#{netuid}",
+            "SK": date,
+            "total_stake": total_stake,
+            "netuid": netuid,
+        }))
+    except Exception as e:
+        logger.warning(f"Failed to store daily stake for SN{netuid}: {e}")
+
+
 def _count_recent_registrations(neurons_raw: list[dict], current_block: int) -> int:
     """Count neurons registered in the last ~24h (7200 blocks)."""
     count = 0
@@ -320,6 +349,7 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                           emission_trend, roi, reward_model, gini, top_3,
                           taoflow, churn, validator_landscape,
                           self_mining_risk: Optional[dict] = None,
+                          real_apy: float = 0.0,
                           source_block_number: int = 0) -> dict:
     """Build the derived metrics JSON structure for S3 storage."""
     now = datetime.now(timezone.utc).isoformat()
@@ -379,8 +409,11 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                 "top_3_stake_share": validator_landscape.top_3_stake_share,
                 "concentrated": validator_landscape.concentrated,
                 "net_tao_yield_per_validator_per_day": validator_landscape.net_tao_yield_per_validator_per_day,
+                "avg_vtrust": validator_landscape.avg_vtrust,
+                "min_vtrust": validator_landscape.min_vtrust,
             },
             "self_mining_risk": self_mining_risk or {"risk_score": 0.0, "signals": []},
+            "real_apy_percent": real_apy,
         },
     }
 

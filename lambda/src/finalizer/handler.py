@@ -23,6 +23,7 @@ import boto3
 
 from src.config import PipelineConfig, get_config
 from src.instrumentation import set_trace_id, instrument
+from src.processor.metrics import MetricsEngine
 from src.state.state_manager import StateManager, _float_to_decimal
 from src.storage.storage_layer import StorageLayer
 
@@ -163,70 +164,62 @@ def _safe_float(value, default: float = 0.0) -> float:
 def _generate_rankings(all_metrics: dict[int, dict]) -> list[dict]:
     """Generate subnet rankings sorted by attractiveness score."""
     rankings = []
+    total_emission_all = sum(
+        sum(n.get("emission", 0) for n in m.get("data", {}).get("deregistration_risk", []))
+        for m in all_metrics.values()
+    )
 
     for netuid, metrics in all_metrics.items():
         data = metrics.get("data", {})
         roi = data.get("roi_estimate", {})
-        emission = data.get("emission_trend", {})
 
         net_tao_yield = _safe_float(roi.get("net_tao_yield_per_day", 0.0))
-        days_to_recoup = _safe_float(roi.get("days_to_recoup", 0.0), default=9999.0)
-        competitive_density = _safe_float(data.get("competitive_density", 1.0))
-        emission_change = _safe_float(emission.get("change_percent", 0.0))
-        taoflow = data.get("taoflow_health", {}).get("status", "HEALTHY")
+        alpha_price = _safe_float(roi.get("alpha_tao_rate", 0.0))
 
-        # Attractiveness score: higher is better
-        # Weighted formula: yield dominates, penalize high recoup time and density
-        score = _compute_attractiveness_score(
-            net_tao_yield, days_to_recoup, competitive_density,
-            emission_change, taoflow)
+        # Emission share: this subnet's emission / total network emission
+        current_emission = _safe_float(
+            data.get("emission_trend", {}).get("current_total_emission", 0.0))
+        emission_share = (current_emission / total_emission_all
+                          if total_emission_all > 0 else 0.0)
+
+        # Pool depth from ROI slippage context (alpha_price × 1000 is a rough proxy
+        # when actual pool_tao isn't in derived output — TODO: wire actual pool_tao)
+        pool_depth = _safe_float(alpha_price * 10000.0 if alpha_price > 0 else 0.0)
+
+        # Self-mining risk
+        sm_risk = _safe_float(
+            data.get("self_mining_risk", {}).get("risk_score", 0.0))
+
+        # Net flow EMA (0.0 until stake history accumulates)
+        net_flow_ema = 0.0  # TODO: read from DynamoDB stake history once available
+
+        # Risk-adjusted attractiveness score
+        score = MetricsEngine.compute_attractiveness_score(
+            net_tao_yield=net_tao_yield,
+            emission_share=emission_share,
+            pool_depth_tao=pool_depth,
+            self_mining_risk=sm_risk,
+            net_flow_ema=net_flow_ema,
+        )
 
         rankings.append({
             "netuid": netuid,
             "net_tao_yield": net_tao_yield,
-            "days_to_recoup": days_to_recoup,
+            "days_to_recoup": _safe_float(roi.get("days_to_recoup", 0.0), default=9999.0),
             "thirty_day_projection": _safe_float(roi.get("thirty_day_projected_tao", 0.0)),
-            "competitive_density": competitive_density,
-            "emission_trend": emission_change,
-            "alpha_price": _safe_float(roi.get("alpha_tao_rate", 0.0)),
+            "competitive_density": _safe_float(data.get("competitive_density", 1.0)),
+            "emission_trend": _safe_float(
+                data.get("emission_trend", {}).get("change_percent", 0.0)),
+            "alpha_price": alpha_price,
             "attractiveness_score": score,
+            "self_mining_risk": sm_risk,
+            "real_apy_percent": _safe_float(data.get("real_apy_percent", 0.0)),
         })
 
     # Sort by attractiveness score descending
     rankings.sort(key=lambda r: r["attractiveness_score"], reverse=True)
     return rankings
 
-
-def _compute_attractiveness_score(net_tao_yield: float, days_to_recoup: float,
-                                  competitive_density: float,
-                                  emission_change: float,
-                                  taoflow_status: str) -> float:
-    """Compute composite attractiveness score.
-
-    Higher is better. Factors:
-    - net_tao_yield (weight: 0.55) — primary driver
-    - days_to_recoup inverse (weight: 0.35) — faster payback = better
-    - emission_trend (weight: 0.10) — growing emissions = better
-
-    NOTE: competitive_density (weight: 0) and taoflow (weight: 0) are neutralized.
-    competitive_density mixes units and never differentiates subnets (max 0.074).
-    taoflow always returns HEALTHY (no stake history accumulated yet).
-    Re-enable when: competitive_density is replaced with occupancy_rate,
-    and taoflow has 7+ days of stake history. See kb/backlog.md items #12, #13.
-    """
-    # Normalize yield (assume max ~100 TAO/day is excellent)
-    yield_score = min(net_tao_yield / 100.0, 1.0)
-
-    # Normalize recoup (7 days = perfect, 365+ = terrible)
-    if days_to_recoup <= 0 or days_to_recoup == float("inf"):
-        recoup_score = 0.0
-    else:
-        recoup_score = max(0.0, 1.0 - (days_to_recoup / 365.0))
-
-    # Emission trend (positive = good, capped at ±50%)
-    trend_score = 0.5 + min(max(emission_change, -0.5), 0.5)
-
-    return (yield_score * 0.55 + recoup_score * 0.35 + trend_score * 0.10)
 
 
 # ---------------------------------------------------------------------------
