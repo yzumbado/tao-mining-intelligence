@@ -149,9 +149,9 @@ def _seed_raw_data(netuid: int = 1, date: str = "2026-05-15", neurons: list[dict
 
     s3.put_object(Bucket=bucket, Key=f"raw/metagraph/{date}/{netuid}.json",
                   Body=json.dumps(_make_raw_snapshot(netuid, date, neurons)))
-    s3.put_object(Bucket=bucket, Key=f"raw/alpha-prices/{date}.json",
+    s3.put_object(Bucket=bucket, Key=f"raw/alpha-prices/{date}/{netuid}.json",
                   Body=json.dumps(_make_alpha_prices(netuid, date)))
-    s3.put_object(Bucket=bucket, Key=f"raw/registration-costs/{date}.json",
+    s3.put_object(Bucket=bucket, Key=f"raw/registration-costs/{date}/{netuid}.json",
                   Body=json.dumps(_make_registration_costs(netuid, date)))
     s3.put_object(Bucket=bucket, Key=f"raw/hyperparameters/{date}/{netuid}.json",
                   Body=json.dumps(_make_hyperparameters(netuid, date)))

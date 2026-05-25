@@ -31,13 +31,17 @@ def _make_derived_metrics(netuid: int, date: str, *,
                           days_to_recoup: float = 10.0,
                           competitive_density: float = 0.3,
                           emission_change: float = 0.05,
-                          emission_direction: str = "stable") -> dict:
+                          emission_direction: str = "stable",
+                          self_mining_risk: float = 0.0,
+                          real_apy_percent: float = 5.0) -> dict:
     """Create derived metrics as stored by the Processor."""
     return {
         "metadata": {
             "netuid": netuid,
             "source_snapshot_date": date,
+            "processed_at": f"{date}T01:00:00+00:00",
             "computation_timestamp": f"{date}T01:00:00+00:00",
+            "source_block_number": 5000000,
             "schema_version": "1.0.0",
             "pipeline_version": "1.0.0",
         },
@@ -83,7 +87,17 @@ def _make_derived_metrics(netuid: int, date: str, *,
                 "top_3_stake_share": 0.5,
                 "concentrated": False,
                 "net_tao_yield_per_validator_per_day": 0.1,
+                "avg_vtrust": 0.85,
+                "min_vtrust": 0.6,
             },
+            "self_mining_risk": {
+                "risk_score": self_mining_risk,
+                "signals": ["single_or_no_earning_miner"] if self_mining_risk > 0.3 else [],
+                "earning_miners": 1 if self_mining_risk > 0.3 else 10,
+                "active_validators": 1 if self_mining_risk > 0.5 else 10,
+                "unique_coldkeys": 2 if self_mining_risk > 0.3 else 15,
+            },
+            "real_apy_percent": real_apy_percent,
         },
     }
 
@@ -479,7 +493,8 @@ class TestRankingSorting:
 
         required_fields = {"netuid", "net_tao_yield", "days_to_recoup",
                            "competitive_density", "emission_trend",
-                           "attractiveness_score"}
+                           "attractiveness_score", "self_mining_risk",
+                           "real_apy_percent"}
         for entry in rankings:
             assert required_fields.issubset(entry.keys())
 
