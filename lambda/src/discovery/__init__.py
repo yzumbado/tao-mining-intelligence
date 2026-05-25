@@ -106,13 +106,7 @@ async def _discover_subnets() -> list[int]:
 
 def _get_profile(netuid: int) -> Optional[dict]:
     """Read PROFILE#basic for a subnet."""
-    try:
-        resp = _state_manager._table.get_item(
-            Key={"PK": f"SUBNET#{netuid}", "SK": "PROFILE#basic"}
-        )
-        return resp.get("Item")
-    except Exception:
-        return None
+    return _state_manager.get_basic_profile(netuid)
 
 
 def _is_stale(profile: dict, max_staleness_hours: float) -> bool:

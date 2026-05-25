@@ -22,7 +22,7 @@ import boto3
 from src.config import PipelineConfig, get_config
 from src.instrumentation import set_trace_id, instrument
 from src.processor.metrics import MetricsEngine
-from src.state.state_manager import StateManager, _float_to_decimal
+from src.state.state_manager import StateManager
 from src.storage.storage_layer import StorageLayer
 
 logger = logging.getLogger("tao-pipeline")
@@ -297,21 +297,12 @@ def _extract_immunity_period(hyperparams: Optional[dict]) -> int:
 
 
 def _store_daily_stake(netuid: int, date: str, total_stake: float) -> None:
-    """Store daily stake total for Net TAO Flow computation.
-
-    One write per subnet per day. After 7+ days, enables flow EMA calculation.
-    PK: STAKE_HISTORY#{netuid}, SK: {date}
-    """
+    """Store daily stake total for Net TAO Flow computation."""
     try:
-        table = _state_manager._table
-        table.put_item(Item=_float_to_decimal({
-            "PK": f"STAKE_HISTORY#{netuid}",
-            "SK": date,
-            "total_stake": total_stake,
-            "netuid": netuid,
-        }))
+        _state_manager.store_daily_stake(netuid, date, total_stake)
     except Exception as e:
         logger.warning(f"Failed to store daily stake for SN{netuid}: {e}")
+
 
 
 def _count_recent_registrations(neurons_raw: list[dict], current_block: int) -> int:
@@ -429,22 +420,10 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
 def _write_split_profiles(netuid: int, neurons, reward_model, gini, top_3,
                           validator_landscape, date: str,
                           self_mining_risk: Optional[dict] = None) -> None:
-    """Write all 5 split profiles to DynamoDB."""
-    table = _state_manager._table
+    """Write all 5 split profiles to DynamoDB via StateManager."""
     now = datetime.now(timezone.utc).isoformat()
 
-    # PROFILE#basic
-    table.put_item(Item=_float_to_decimal({
-        "PK": f"SUBNET#{netuid}", "SK": "PROFILE#basic",
-        "netuid": netuid,
-        "reward_model": reward_model.value,
-        "gini_coefficient": gini,
-        "top_3_concentration": top_3,
-        "processed_at": now,
-        "last_updated": now,
-    }))
-
-    # PROFILE#winner — top 5 miners by emission
+    # Build top miners for winner profile
     miners = sorted([n for n in neurons if n.incentive > 0],
                     key=lambda n: n.emission, reverse=True)[:5]
     total_emission = sum(n.emission for n in neurons if n.incentive > 0)
@@ -457,46 +436,48 @@ def _write_split_profiles(netuid: int, neurons, reward_model, gini, top_3,
         "incentive": m.incentive,
     } for m in miners]
 
-    table.put_item(Item=_float_to_decimal({
-        "PK": f"SUBNET#{netuid}", "SK": "PROFILE#winner",
-        "netuid": netuid,
-        "top_miners": top_miners,
-        "last_updated": now,
-    }))
+    profiles = {
+        "basic": {
+            "netuid": netuid,
+            "reward_model": reward_model.value,
+            "gini_coefficient": gini,
+            "top_3_concentration": top_3,
+            "processed_at": now,
+            "last_updated": now,
+        },
+        "winner": {
+            "netuid": netuid,
+            "top_miners": top_miners,
+            "last_updated": now,
+        },
+        "validator": {
+            "netuid": netuid,
+            "active_validators": validator_landscape.active_validators,
+            "total_validator_stake": validator_landscape.total_validator_stake,
+            "top_1_stake_share": validator_landscape.top_1_stake_share,
+            "top_3_stake_share": validator_landscape.top_3_stake_share,
+            "concentrated": validator_landscape.concentrated,
+            "net_tao_yield_per_validator_per_day": validator_landscape.net_tao_yield_per_validator_per_day,
+            "last_updated": now,
+        },
+        "intelligence": {
+            "netuid": netuid,
+            "anomalies": [],
+            "strategy_observations": [],
+            "risk_factors": [],
+            "self_mining_risk": self_mining_risk or {"risk_score": 0.0, "signals": []},
+            "last_updated": now,
+        },
+        "composability": {
+            "netuid": netuid,
+            "dependencies": [],
+            "dependents": [],
+            "composability_score": 0.0,
+            "last_updated": now,
+        },
+    }
 
-    # PROFILE#validator
-    table.put_item(Item=_float_to_decimal({
-        "PK": f"SUBNET#{netuid}", "SK": "PROFILE#validator",
-        "netuid": netuid,
-        "active_validators": validator_landscape.active_validators,
-        "total_validator_stake": validator_landscape.total_validator_stake,
-        "top_1_stake_share": validator_landscape.top_1_stake_share,
-        "top_3_stake_share": validator_landscape.top_3_stake_share,
-        "concentrated": validator_landscape.concentrated,
-        "net_tao_yield_per_validator_per_day": validator_landscape.net_tao_yield_per_validator_per_day,
-        "last_updated": now,
-    }))
-
-    # PROFILE#intelligence
-    table.put_item(Item=_float_to_decimal({
-        "PK": f"SUBNET#{netuid}", "SK": "PROFILE#intelligence",
-        "netuid": netuid,
-        "anomalies": [],
-        "strategy_observations": [],
-        "risk_factors": [],
-        "self_mining_risk": self_mining_risk or {"risk_score": 0.0, "signals": []},
-        "last_updated": now,
-    }))
-
-    # PROFILE#composability
-    table.put_item(Item=_float_to_decimal({
-        "PK": f"SUBNET#{netuid}", "SK": "PROFILE#composability",
-        "netuid": netuid,
-        "dependencies": [],
-        "dependents": [],
-        "composability_score": 0.0,
-        "last_updated": now,
-    }))
+    _state_manager.write_subnet_profiles(netuid, profiles)
 
 
 # ---------------------------------------------------------------------------

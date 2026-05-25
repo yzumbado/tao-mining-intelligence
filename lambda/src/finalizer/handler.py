@@ -24,7 +24,7 @@ import boto3
 from src.config import PipelineConfig, get_config
 from src.instrumentation import set_trace_id, instrument
 from src.processor.metrics import MetricsEngine
-from src.state.state_manager import StateManager, _float_to_decimal
+from src.state.state_manager import StateManager
 from src.storage.storage_layer import StorageLayer
 
 logger = logging.getLogger("tao-pipeline")
@@ -91,21 +91,10 @@ def handle(event: dict, context: Any) -> dict:
             briefing)
 
         # Store RANKING|LATEST in DynamoDB
-        _state_manager._table.put_item(Item=_float_to_decimal({
-            "PK": "RANKING", "SK": "LATEST",
-            "ranked_subnets": rankings,
-            "date": date,
-            "last_updated": datetime.now(timezone.utc).isoformat(),
-        }))
+        _state_manager.store_ranking(date, rankings)
 
         # Store BRIEFING|{date} in DynamoDB
-        _state_manager._table.put_item(Item=_float_to_decimal({
-            "PK": "BRIEFING", "SK": date,
-            "summary": briefing.get("summary", ""),
-            "alerts_count": len(briefing.get("alerts", [])),
-            "subnets_processed": briefing.get("subnets_processed", 0),
-            "last_updated": datetime.now(timezone.utc).isoformat(),
-        }))
+        _state_manager.store_briefing(date, briefing)
 
         # Mark cycle complete (best-effort, for observability only)
         try:
@@ -343,16 +332,8 @@ def _generate_staking_rankings(all_metrics: dict[int, dict]) -> list[dict]:
 
 def _detect_new_subnets(current_subnets: list[int]) -> list[int]:
     """Detect subnets that are new (not in previous active list)."""
-    try:
-        resp = _state_manager._table.get_item(
-            Key={"PK": "CONFIG", "SK": "PREVIOUS_ACTIVE_SUBNETS"})
-        item = resp.get("Item")
-        if not item:
-            return []
-        previous = [int(n) for n in item.get("netuids", [])]
-        return [n for n in current_subnets if n not in previous]
-    except Exception:
-        return []
+    previous = _state_manager.get_previous_active_subnets()
+    return [n for n in current_subnets if n not in previous]
 
 
 # ---------------------------------------------------------------------------
@@ -373,19 +354,7 @@ def _enrich_rankings_for_site(rankings: list[dict], all_metrics: dict[int, dict]
         taoflow_map[netuid] = status
 
     # Batch-read profiles from DynamoDB
-    profiles = {}
-    try:
-        resp = _state_manager._table.scan(
-            FilterExpression="SK = :sk",
-            ExpressionAttributeValues={":sk": "PROFILE#basic"},
-            ProjectionExpression="PK, netuid, #n, category, mining_style",
-            ExpressionAttributeNames={"#n": "name"},
-        )
-        for item in resp.get("Items", []):
-            nid = int(item.get("netuid", 0))
-            profiles[nid] = item
-    except Exception:
-        pass
+    profiles = _state_manager.scan_basic_profiles()
 
     enriched = []
     for r in rankings:

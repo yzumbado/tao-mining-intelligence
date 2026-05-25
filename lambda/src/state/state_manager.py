@@ -522,3 +522,89 @@ class StateManager:
         new_count = int(resp["Attributes"]["subnets_complete"])
         logger.debug(f"Cycle {cycle_id}: subnets_complete = {new_count}")
         return new_count
+
+    # =========================================================================
+    # Ranking & Briefing Storage
+    # =========================================================================
+
+    def store_ranking(self, date: str, rankings: list[dict]) -> None:
+        """Store ranked subnets to RANKING|LATEST."""
+        self._table.put_item(Item=_float_to_decimal({
+            "PK": "RANKING", "SK": "LATEST",
+            "ranked_subnets": rankings,
+            "date": date,
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+        }))
+
+    def store_briefing(self, date: str, briefing: dict) -> None:
+        """Store daily briefing summary to BRIEFING|{date}."""
+        self._table.put_item(Item=_float_to_decimal({
+            "PK": "BRIEFING", "SK": date,
+            "summary": briefing.get("summary", ""),
+            "alerts_count": len(briefing.get("alerts", [])),
+            "subnets_processed": briefing.get("subnets_processed", 0),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+        }))
+
+    def get_previous_active_subnets(self) -> list[int]:
+        """Get the previous cycle's active subnet list from CONFIG."""
+        try:
+            resp = self._table.get_item(
+                Key={"PK": "CONFIG", "SK": "PREVIOUS_ACTIVE_SUBNETS"})
+            item = resp.get("Item")
+            if not item:
+                return []
+            return [int(n) for n in item.get("netuids", [])]
+        except Exception:
+            return []
+
+    def scan_basic_profiles(self) -> dict[int, dict]:
+        """Scan all PROFILE#basic items. Returns {netuid: profile_dict}."""
+        profiles: dict[int, dict] = {}
+        try:
+            resp = self._table.scan(
+                FilterExpression="SK = :sk",
+                ExpressionAttributeValues={":sk": "PROFILE#basic"},
+                ProjectionExpression="PK, netuid, #n, category, mining_style",
+                ExpressionAttributeNames={"#n": "name"},
+            )
+            for item in resp.get("Items", []):
+                nid = int(item.get("netuid", 0))
+                profiles[nid] = item
+        except Exception:
+            pass
+        return profiles
+
+    # =========================================================================
+    # Subnet Profile Writes (Processor)
+    # =========================================================================
+
+    def write_subnet_profiles(self, netuid: int, profiles: dict[str, dict]) -> None:
+        """Write split profiles to DynamoDB.
+
+        Args:
+            netuid: Subnet ID.
+            profiles: Dict mapping profile SK suffix to item data.
+                      e.g. {"basic": {...}, "winner": {...}, ...}
+        """
+        for suffix, data in profiles.items():
+            item = {"PK": f"SUBNET#{netuid}", "SK": f"PROFILE#{suffix}", **data}
+            self._table.put_item(Item=_float_to_decimal(item))
+
+    def store_daily_stake(self, netuid: int, date: str, total_stake: float) -> None:
+        """Store daily stake total for Net TAO Flow computation."""
+        self._table.put_item(Item=_float_to_decimal({
+            "PK": f"STAKE_HISTORY#{netuid}",
+            "SK": date,
+            "total_stake": total_stake,
+            "netuid": netuid,
+        }))
+
+    def get_basic_profile(self, netuid: int) -> Optional[dict]:
+        """Get a single subnet's basic profile."""
+        try:
+            resp = self._table.get_item(
+                Key={"PK": f"SUBNET#{netuid}", "SK": "PROFILE#basic"})
+            return resp.get("Item")
+        except Exception:
+            return None
