@@ -158,17 +158,23 @@ def handle(event: dict, context: Any) -> dict:
         validator_landscape = MetricsEngine.compute_validator_landscape(neurons, alpha_price)
         metrics_computed.append("validator_landscape")
 
+        # Self-mining risk detection
+        self_mining_risk = MetricsEngine.compute_self_mining_risk(neurons)
+        metrics_computed.append("self_mining_risk")
+
         # Store derived metrics to S3
         derived_data = _build_derived_output(
             netuid, date, dereg_risks, competitive_density, emission_trend,
             roi, reward_model, gini, top_3, taoflow, churn, validator_landscape,
+            self_mining_risk=self_mining_risk,
             source_block_number=current_block)
         _storage.store_snapshot(
             _storage.get_date_path("derived/metrics", date, netuid), derived_data)
 
         # Write split profiles to DynamoDB
         _write_split_profiles(netuid, neurons, reward_model, gini, top_3,
-                              validator_landscape, date)
+                              validator_landscape, date,
+                              self_mining_risk=self_mining_risk)
 
         # Track hotkeys
         _track_hotkeys(netuid, date, neurons, prev_snapshot)
@@ -313,6 +319,7 @@ def _get_previous_hotkeys(prev_snapshot: Optional[dict]) -> set[str]:
 def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                           emission_trend, roi, reward_model, gini, top_3,
                           taoflow, churn, validator_landscape,
+                          self_mining_risk: Optional[dict] = None,
                           source_block_number: int = 0) -> dict:
     """Build the derived metrics JSON structure for S3 storage."""
     now = datetime.now(timezone.utc).isoformat()
@@ -373,6 +380,7 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                 "concentrated": validator_landscape.concentrated,
                 "net_tao_yield_per_validator_per_day": validator_landscape.net_tao_yield_per_validator_per_day,
             },
+            "self_mining_risk": self_mining_risk or {"risk_score": 0.0, "signals": []},
         },
     }
 
@@ -383,7 +391,8 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
 
 
 def _write_split_profiles(netuid: int, neurons, reward_model, gini, top_3,
-                          validator_landscape, date: str) -> None:
+                          validator_landscape, date: str,
+                          self_mining_risk: Optional[dict] = None) -> None:
     """Write all 5 split profiles to DynamoDB."""
     table = _state_manager._table
     now = datetime.now(timezone.utc).isoformat()
@@ -439,6 +448,7 @@ def _write_split_profiles(netuid: int, neurons, reward_model, gini, top_3,
         "anomalies": [],
         "strategy_observations": [],
         "risk_factors": [],
+        "self_mining_risk": self_mining_risk or {"risk_score": 0.0, "signals": []},
         "last_updated": now,
     }))
 

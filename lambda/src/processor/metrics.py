@@ -1325,6 +1325,91 @@ class MetricsEngine:
             "break_even_alpha_depreciation": break_even,
         }
 
+    # =========================================================================
+    # Self-Mining Detection Heuristic
+    # =========================================================================
+
+    @staticmethod
+    def compute_self_mining_risk(neurons: list[Neuron]) -> dict:
+        """Detect subnets likely gaming emissions via self-mining or abandonment.
+
+        Metric:
+            name: Self-Mining Risk
+            status: HYPOTHESIS
+            hypothesis: |
+                Subnets with a single miner, single validator, shared coldkeys, and
+                low participant diversity are likely self-mining — the owner validates
+                their own miner to capture emissions without real competition or work.
+                Const (Bittensor co-founder) announced emission blocking for such subnets.
+            formula: |
+                signals = []
+                risk = 0.0
+                IF earning_miners <= 1: risk += 0.35, signal "single_or_no_earning_miner"
+                IF active_validators == 1: risk += 0.25, signal "single_validator"
+                IF miner_coldkeys ∩ validator_coldkeys ≠ ∅: risk += 0.25, signal "coldkey_overlap"
+                IF unique_coldkeys / total_neurons < 0.3: risk += 0.15, signal "low_neuron_diversity"
+            usefulness_mining: Avoid registering on subnets likely to have emissions blocked
+            usefulness_staking: Avoid staking on subnets that may lose all emission
+            usefulness_risk: Primary signal for "is this subnet legitimate?"
+            output_range: "risk_score: [0.0, 1.0]; signals: list of triggered signal names"
+            known_issues: |
+                - Does not check on-chain subnet description or GitHub activity
+                - Coldkey overlap is necessary but not sufficient (some legitimate subnets share coldkeys during bootstrap)
+                - Owner cut percentage not included (requires hyperparams passed separately)
+            assumptions: |
+                - Are the signal weights (0.35, 0.25, 0.25, 0.15) well-calibrated?
+                - Is coldkey overlap always suspicious, or only combined with other signals?
+                - Should we add a time-based signal (subnet age vs activity)?
+
+        Args:
+            neurons: All neurons in the subnet.
+
+        Returns:
+            Dict with risk_score [0.0, 1.0], signals list, and diagnostic counts.
+        """
+        if not neurons:
+            return {"risk_score": 0.0, "signals": [], "earning_miners": 0,
+                    "active_validators": 0, "unique_coldkeys": 0}
+
+        risk = 0.0
+        signals: list[str] = []
+
+        miners = [n for n in neurons if n.incentive > 0 or not n.is_validator]
+        earning_miners = [m for m in miners if m.emission > 0]
+        validators = [n for n in neurons if n.is_validator]
+
+        # Signal 1: Single or no earning miner (weight 0.35)
+        if len(earning_miners) <= 1:
+            risk += 0.35
+            signals.append("single_or_no_earning_miner")
+
+        # Signal 2: Single validator (weight 0.25)
+        if len(validators) == 1:
+            risk += 0.25
+            signals.append("single_validator")
+
+        # Signal 3: Coldkey overlap between miners and validators (weight 0.25)
+        miner_coldkeys = {m.coldkey for m in earning_miners}
+        validator_coldkeys = {v.coldkey for v in validators}
+        if miner_coldkeys and validator_coldkeys and miner_coldkeys & validator_coldkeys:
+            risk += 0.25
+            signals.append("coldkey_overlap")
+
+        # Signal 4: Low neuron diversity (weight 0.15)
+        unique_coldkeys = len({n.coldkey for n in neurons})
+        diversity = unique_coldkeys / len(neurons) if neurons else 1.0
+        if diversity < 0.3:
+            risk += 0.15
+            signals.append("low_neuron_diversity")
+
+        return {
+            "risk_score": min(1.0, risk),
+            "signals": signals,
+            "earning_miners": len(earning_miners),
+            "active_validators": len(validators),
+            "unique_coldkeys": unique_coldkeys,
+        }
+
 
 # =============================================================================
 # Standalone functions for property testing (simple types, no Pydantic models)
