@@ -86,14 +86,14 @@
 - **Acceptance criteria**: Self-mining subnets score < 0.3; WTA subnets without top-3 path score lower than equivalent PROPORTIONAL subnets; thin-liquidity subnets penalized
 - **Dependency**: Self-mining risk metric (done), all other inputs already in derived metrics
 
-### 7. Conformance System Phase A — Inline Post-Conditions
+### 7. ~~Conformance System Phase A~~ ✅ DONE (2026-05-25) — Inline Post-Conditions
 - **Effort**: S (30 min)
 - **Risk**: Silent data quality regressions go undetected
 - **Source**: `kb/conformance-build-plan.md` — Phase A
 - **Action**: Add `_verify_outputs()` to Finalizer. Checks: rankings count, no NaN, sorted, date matches, source_block > 0. Log structured JSON + CloudWatch metric on failure.
 - **Existing reference**: Full design in `kb/conformance-build-plan.md`
 
-### 8. Complete StateManager as Single DynamoDB Access Layer (DAO)
+### 8. ~~Complete StateManager as Single DynamoDB Access Layer (DAO)~~ ✅ DONE (2026-05-25)
 - **Effort**: M (1-2 hours)
 - **Risk**: Fragile coupling — 3 handlers bypass the DAO, accessing `_table` directly and importing private `_float_to_decimal`. Schema changes require updating both StateManager AND handlers.
 - **Source**: Code review — 6 violations across Finalizer (4), Processor (1 block of 5 writes), Discovery (1)
@@ -115,7 +115,7 @@
 - **Acceptance criteria**: `grep -r "_state_manager._table\|_float_to_decimal" lambda/src/ | grep -v state_manager.py` returns empty
 - **Existing reference**: Handoff doc already lists DynamoDB PK/SK patterns — StateManager should be the only file that knows them
 
-### 9. Deep Validation Strategy — Contract Test Pattern
+### 9. ~~Deep Validation Strategy — Contract Test Pattern~~ ✅ Phase A DONE (2026-05-25), Phase B pending
 - **Effort**: M (2 hours)
 - **Risk**: The "180 tests pass but 3 bugs ship" problem recurs
 - **Source**: `kb/backlog-validation-strategy-review.md` (existing, HIGH priority)
@@ -125,14 +125,14 @@
   - Add CI check: template field references must exist in producer schema
 - **Enhancement from review**: Also add a contract test that `_generate_staking_rankings()` output matches what the site would consume (currently untested)
 
-### 10. Fix Staking APY — Apply Validator Take Rate (Option A)
+### 10. ~~Fix Staking APY — Apply Validator Take Rate (Option A)~~ ✅ DONE (2026-05-25)
 - **Effort**: S (30 min)
 - **Risk**: Users making staking decisions on 1.6x overstated APY
 - **Source**: `kb/bug-staking-apy-overstated.md` (existing, OPEN)
 - **Action**: Apply flat 18% validator take rate as interim fix. Add "estimated" label. Document that full fix (root proportion + per-validator take) requires chain data from Stage 2.
 - **Enhancement from review**: Also fix the `pool_tao` estimation bug in `_generate_staking_rankings()` — currently uses `alpha_tao_rate * 1000` which is nonsensical. Use actual `pool_tao_liquidity` from derived metrics.
 
-### 11. Fix Staking Rankings Pool Data Bug
+### 11. ~~Fix Staking Rankings Pool Data Bug~~ ✅ DONE (2026-05-25)
 - **Effort**: XS (10 min)  
 - **Risk**: Staking slippage estimates are meaningless
 - **Source**: Code review — `_generate_staking_rankings()` line: `pool_tao = _safe_float(data.get("roi_estimate", {}).get("alpha_tao_rate", 0)) * 1000`

@@ -222,8 +222,35 @@ lambda/src/
 - Our attractiveness score was effectively just net_tao_yield (recoup≈1.0, trend≈0.5 for all subnets)
 - Redesigned to risk-adjusted formula with self-mining penalty — SN104 would now score near 0
 - Test audit found 2 CRITICAL lies: alpha_price never reached processor (wrong S3 path), self_mining_risk never tested non-zero
-- Daily stake accumulation started — Net TAO Flow will activate after 7 days of data
+- Daily stake accumulation started — Net TAO Flow will activate after 7 days of data (2026-06-01)
 - 6 MEDIUM test lies remain (see backlog or ask for details)
+- Deployed all changes to production at 22:24 UTC — new output expected within 1-2 hours of deploy
+- Validator concentration: 47% of subnets have top1 > 50% — binary flag useless, replaced with tiered risk
+- Emission trend is NOT broken: 127/129 subnets show 0% change because Bittensor emissions change slowly (30d EMA)
+- Contract smoke test (Phase A) catches field renames/type changes between Processor→Finalizer
+
+### Pending verification (next agent should check):
+- [ ] New rankings output has fields: self_mining_risk, real_apy_percent, concentration_risk
+- [ ] SN104 attractiveness_score is near 0 (self-mining penalty applied)
+- [ ] Top subnet scores are ~0.5-0.6 (not 0.95 ceiling)
+- [ ] Conformance post-condition logs appear in CloudWatch (search for "conformance")
+- [ ] source_block_number is non-zero in metadata.json (was 0 before deploy)
+- [ ] Staking APY for SN0 is ~9% (was 11%, reduced by take rate)
+
+### Patterns discovered this session (propagate to future work):
+1. **"Test the contract, not the unit"** — 206 unit tests passed while 2 CRITICAL contract bugs existed. The contract smoke test (run real Processor → feed to real Finalizer) catches what unit tests can't.
+2. **"Research before building"** — 30 min of ecosystem research (taostats, TAO Institute, Taoculator) completely changed our scoring approach. Without it, we'd have built more of the same broken formula.
+3. **"Live data validates hypotheses"** — SN104 investigation proved our score was broken. Validator concentration analysis proved the binary flag was useless. Emission trend analysis proved it wasn't a bug.
+4. **"Multiplicative penalties > additive weights"** — The old score added factors (all near 1.0 = no differentiation). The new score multiplies penalties (risk=1.0 → score=0.0). Much more effective.
+5. **"Deploy early, verify live"** — We deployed mid-session rather than batching. This lets us verify the new code works in production before the session ends.
+
+### Architecture state after this session:
+- MetricsEngine: 15 algorithms (was 11), all pure functions, all property-tested
+- StateManager: sole DynamoDB access layer (was fragmented across 3 handlers)
+- Finalizer: conformance post-conditions run on every invocation
+- Pipeline: accumulating daily stake data (STAKE_HISTORY#{netuid}#{date})
+- Contract test: Processor→Finalizer boundary validated with real data flow
+- Attractiveness score: risk-adjusted (yield×0.30 + flow×0.25 + emission×0.25 + depth×0.20 × penalty)
 
 ### Session 2026-05-19 Findings (context for next agent):
 - Output contract bugs: tests used idealized mock data that didn't match production shapes
