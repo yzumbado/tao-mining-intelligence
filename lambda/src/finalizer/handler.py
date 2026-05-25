@@ -158,7 +158,7 @@ def _generate_rankings(all_metrics: dict[int, dict]) -> list[dict]:
     """Generate subnet rankings sorted by attractiveness score."""
     rankings = []
     total_emission_all = sum(
-        sum(n.get("emission", 0) for n in m.get("data", {}).get("deregistration_risk", []))
+        _safe_float(m.get("data", {}).get("emission_trend", {}).get("current_total_emission", 0.0))
         for m in all_metrics.values()
     )
 
