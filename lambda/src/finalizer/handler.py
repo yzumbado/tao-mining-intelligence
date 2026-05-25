@@ -116,6 +116,10 @@ def handle(event: dict, context: Any) -> dict:
         # Upload agent-consumable files to site bucket (AD18)
         _upload_agent_files(rankings, briefing, all_metrics, date)
 
+        # Post-condition verification (Conformance Phase A)
+        # Logs findings as structured JSON; does NOT block pipeline.
+        _verify_outputs(rankings, briefing, all_metrics, date)
+
         ctx["rankings_count"] = len(rankings)
         ctx["alerts_count"] = len(briefing.get("alerts", []))
 
@@ -392,6 +396,106 @@ def _enrich_rankings_for_site(rankings: list[dict], all_metrics: dict[int, dict]
         entry["taoflow_status"] = taoflow_map.get(netuid, "")
         enriched.append(entry)
     return enriched
+
+
+# ---------------------------------------------------------------------------
+# Conformance Phase A: Inline Post-Conditions
+# ---------------------------------------------------------------------------
+
+
+def _verify_outputs(rankings: list, briefing: dict,
+                    all_metrics: dict, date: str) -> None:
+    """Verify output quality after generation. Logs findings, never blocks.
+
+    Checks:
+    1. Rankings count matches metrics count
+    2. No NaN/None in critical ranking fields
+    3. Rankings sorted descending by score
+    4. Briefing date matches expected date
+    5. At least some subnets have source_block > 0
+    """
+    import math
+    findings: list[dict] = []
+
+    # Check 1: Rankings count == metrics count
+    if len(rankings) != len(all_metrics):
+        findings.append({
+            "check": "rankings_count_mismatch",
+            "severity": "warning",
+            "expected": len(all_metrics),
+            "actual": len(rankings),
+            "message": f"Rankings has {len(rankings)} entries but {len(all_metrics)} subnets have metrics",
+        })
+
+    # Check 2: No NaN/None in critical fields
+    critical_fields = ["netuid", "attractiveness_score", "net_tao_yield"]
+    for i, entry in enumerate(rankings):
+        for field in critical_fields:
+            val = entry.get(field)
+            if val is None:
+                findings.append({
+                    "check": "null_critical_field",
+                    "severity": "error",
+                    "field": field, "rank_position": i,
+                    "message": f"Rank #{i} has None for {field}",
+                })
+            elif isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+                findings.append({
+                    "check": "nan_critical_field",
+                    "severity": "error",
+                    "field": field, "rank_position": i,
+                    "message": f"Rank #{i} has {val} for {field}",
+                })
+
+    # Check 3: Rankings sorted descending
+    for i in range(1, len(rankings)):
+        if rankings[i].get("attractiveness_score", 0) > rankings[i - 1].get("attractiveness_score", 0):
+            findings.append({
+                "check": "rankings_not_sorted",
+                "severity": "error",
+                "position": i,
+                "message": f"Rank #{i} score {rankings[i]['attractiveness_score']:.4f} > "
+                           f"rank #{i-1} score {rankings[i-1]['attractiveness_score']:.4f}",
+            })
+            break  # One violation is enough
+
+    # Check 4: Briefing date matches
+    briefing_date = briefing.get("date", "")
+    if briefing_date != date:
+        findings.append({
+            "check": "briefing_date_mismatch",
+            "severity": "warning",
+            "expected": date, "actual": briefing_date,
+            "message": f"Briefing date '{briefing_date}' != expected '{date}'",
+        })
+
+    # Check 5: At least some subnets have source_block > 0
+    blocks_found = sum(
+        1 for m in all_metrics.values()
+        if m.get("metadata", {}).get("source_block_number", 0) > 0
+    )
+    if blocks_found == 0 and len(all_metrics) > 0:
+        findings.append({
+            "check": "no_source_blocks",
+            "severity": "warning",
+            "message": "No subnets have source_block_number > 0 in metadata",
+        })
+
+    # Log findings as structured JSON
+    if findings:
+        logger.warning(json.dumps({
+            "conformance": "post_condition_check",
+            "date": date,
+            "findings_count": len(findings),
+            "findings": findings,
+        }))
+    else:
+        logger.info(json.dumps({
+            "conformance": "post_condition_check",
+            "date": date,
+            "status": "all_passed",
+            "rankings_count": len(rankings),
+        }))
 
 
 def _upload_agent_files(rankings: list, briefing: dict,
