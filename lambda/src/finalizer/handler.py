@@ -483,6 +483,8 @@ def _upload_agent_files(rankings: list, briefing: dict,
         s3 = boto3.client("s3", region_name=_config.region)
         now = datetime.now(timezone.utc).isoformat()
 
+        cache_control = "public, max-age=1800, s-maxage=1800"  # 30 min
+
         # llms.txt — machine-readable index for AI agents
         llms_txt = (
             "# TAO Mining Intelligence\n"
@@ -498,7 +500,8 @@ def _upload_agent_files(rankings: list, briefing: dict,
             "- /briefing.html — Daily briefing page\n"
         )
         s3.put_object(Bucket=site_bucket, Key="llms.txt",
-                      Body=llms_txt.encode(), ContentType="text/plain")
+                      Body=llms_txt.encode(), ContentType="text/plain",
+                      CacheControl=cache_control)
 
         # metadata.json — per-subnet freshness
         subnet_freshness = {}
@@ -515,15 +518,18 @@ def _upload_agent_files(rankings: list, briefing: dict,
             "subnets": subnet_freshness,
         }
         s3.put_object(Bucket=site_bucket, Key="data/metadata.json",
-                      Body=json.dumps(metadata).encode(), ContentType="application/json")
+                      Body=json.dumps(metadata).encode(), ContentType="application/json",
+                      CacheControl=cache_control)
 
         # rankings.json — current rankings
         s3.put_object(Bucket=site_bucket, Key="data/rankings.json",
-                      Body=json.dumps(rankings).encode(), ContentType="application/json")
+                      Body=json.dumps(rankings).encode(), ContentType="application/json",
+                      CacheControl=cache_control)
 
         # briefing.json — latest briefing
         s3.put_object(Bucket=site_bucket, Key="data/briefing.json",
-                      Body=json.dumps(briefing).encode(), ContentType="application/json")
+                      Body=json.dumps(briefing).encode(), ContentType="application/json",
+                      CacheControl=cache_control)
 
         # HTML site generation
         try:
@@ -535,11 +541,14 @@ def _upload_agent_files(rankings: list, briefing: dict,
             briefing_html = gen.generate_briefing_page(briefing)
 
             s3.put_object(Bucket=site_bucket, Key="index.html",
-                          Body=index_html.encode(), ContentType="text/html")
+                          Body=index_html.encode(), ContentType="text/html",
+                          CacheControl=cache_control)
             s3.put_object(Bucket=site_bucket, Key="rankings.html",
-                          Body=rankings_html.encode(), ContentType="text/html")
+                          Body=rankings_html.encode(), ContentType="text/html",
+                          CacheControl=cache_control)
             s3.put_object(Bucket=site_bucket, Key="briefing.html",
-                          Body=briefing_html.encode(), ContentType="text/html")
+                          Body=briefing_html.encode(), ContentType="text/html",
+                          CacheControl=cache_control)
         except Exception as e:
             logger.warning(f"HTML site generation failed (non-critical): {e}")
 
@@ -548,9 +557,31 @@ def _upload_agent_files(rankings: list, briefing: dict,
             staking_rankings = _generate_staking_rankings(all_metrics)
             s3.put_object(Bucket=site_bucket, Key="data/staking_rankings.json",
                           Body=json.dumps(staking_rankings).encode(),
-                          ContentType="application/json")
+                          ContentType="application/json",
+                          CacheControl=cache_control)
         except Exception as e:
             logger.warning(f"Staking rankings generation failed (non-critical): {e}")
 
     except Exception as e:
         logger.warning(f"Failed to upload agent files to site bucket: {e}")
+
+    # Invalidate CloudFront cache so new data is served immediately
+    _invalidate_cloudfront()
+
+
+def _invalidate_cloudfront() -> None:
+    """Create a CloudFront invalidation for all site paths."""
+    distribution_id = os.environ.get("CLOUDFRONT_DISTRIBUTION_ID", "")
+    if not distribution_id:
+        return
+    try:
+        cf = boto3.client("cloudfront", region_name=_config.region)
+        cf.create_invalidation(
+            DistributionId=distribution_id,
+            InvalidationBatch={
+                "Paths": {"Quantity": 1, "Items": ["/*"]},
+                "CallerReference": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+    except Exception as e:
+        logger.warning(f"CloudFront invalidation failed (non-critical): {e}")

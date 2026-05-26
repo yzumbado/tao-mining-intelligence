@@ -448,7 +448,7 @@ class TaoPipelineStack(Stack):
         # =====================================================================
         # CDN: CloudFront
         # =====================================================================
-        cloudfront.Distribution(
+        distribution = cloudfront.Distribution(
             self, "SiteDistribution",
             default_behavior=cloudfront.BehaviorOptions(
                 origin=origins.S3BucketOrigin.with_origin_access_control(site_bucket),
@@ -456,3 +456,10 @@ class TaoPipelineStack(Stack):
             ),
             default_root_object="index.html",
         )
+
+        # Pass distribution ID to Finalizer for cache invalidation
+        finalizer_fn.add_environment(
+            "CLOUDFRONT_DISTRIBUTION_ID", distribution.distribution_id)
+
+        # Grant Finalizer permission to create invalidations
+        distribution.grant_create_invalidation(finalizer_fn)
