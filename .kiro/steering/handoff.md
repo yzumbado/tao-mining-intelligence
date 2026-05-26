@@ -243,6 +243,16 @@ lambda/src/
 3. **"Live data validates hypotheses"** — SN104 investigation proved our score was broken. Validator concentration analysis proved the binary flag was useless. Emission trend analysis proved it wasn't a bug.
 4. **"Multiplicative penalties > additive weights"** — The old score added factors (all near 1.0 = no differentiation). The new score multiplies penalties (risk=1.0 → score=0.0). Much more effective.
 5. **"Deploy early, verify live"** — We deployed mid-session rather than batching. This lets us verify the new code works in production before the session ends.
+6. **"Silent correctness bugs pass all tests"** — The emission_share bug (reading from wrong field, always returning 0) passed all 210 tests AND the contract smoke test. It didn't crash — it just made the score silently wrong. Contract tests catch structural breaks (missing fields, type errors) but NOT semantic bugs where a field exists but has the wrong value. Mitigation: add conformance checks that validate value ranges ("emission_share should be > 0 for at least some subnets").
+7. **"Review before closing catches bugs"** — The emission_share bug was found during the session wrap-up review, not during development. Always do a critical review of your own work before declaring done.
+
+### Pending conformance checks to add (Phase B or next session):
+- [ ] emission_share > 0 for at least some subnets (catches the silent-zero bug pattern)
+- [ ] self_mining_risk > 0 for at least 1 subnet (SN104 should always trigger)
+- [ ] concentration_risk.tier != "healthy" for at least some subnets (47% should be non-healthy)
+- [ ] real_apy_percent > 0 for subnets with active validators
+- [ ] pool_tao_liquidity > 0 for subnets with alpha_price > 0
+- [ ] attractiveness_score spread: max - min > 0.3 (if all scores cluster, formula is broken)
 
 ### Architecture state after this session:
 - MetricsEngine: 15 algorithms (was 11), all pure functions, all property-tested
