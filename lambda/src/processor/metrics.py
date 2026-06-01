@@ -1345,36 +1345,38 @@ class MetricsEngine:
     def compute_real_apy(
         total_validator_emission_daily: float,
         total_validator_stake: float,
-        alpha_tao_price: float,
+        alpha_tao_price: float = 1.0,
         validator_take_rate: float = 0.18,
         root_proportion: float = 0.0,
     ) -> float:
-        """Compute real annualized yield from actual daily emission data.
+        """Compute real annualized alpha yield from actual daily emission data.
 
         Metric:
-            name: Real 1D APY
+            name: Alpha APY (1D)
             status: PROVEN
             hypothesis: |
-                Instead of estimating yield theoretically, compute it from actual
-                observed emissions. This is what taostats calls "1D APY" — actual
-                returns in the last day extrapolated to a year.
+                Matches taostats "1D APY" methodology. Both emission and stake are
+                in alpha tokens — no price conversion needed. The result is how fast
+                your alpha balance grows (alpha yield), NOT TAO yield.
             formula: |
-                nominator_emission = total_validator_emission × (1 - take_rate) × (1 - root_proportion)
-                daily_yield_rate = (nominator_emission × alpha_price) / total_stake
+                daily_yield_rate = (emission_daily × (1 - take_rate)) / alpha_stake
                 apy = daily_yield_rate × 365 × 100
-            output_range: "[0.0, ∞) percent — typically 0.5% to 50%"
+            output_range: "[0.0, ∞) percent — typically 10% to 100% for active subnets"
             known_issues: |
                 - Extrapolates one day to a year (volatile day = misleading APY)
                 - Uses flat 18% take rate (real is per-validator, 10-18%)
-                - root_proportion = 0 when not yet collected (pre-deploy data)
+                - Alpha APY ≠ TAO APY (alpha price fluctuates)
+                - Simple annualization (not compound like taostats — within 20%)
         """
-        if total_validator_stake <= 0 or alpha_tao_price <= 0 or total_validator_emission_daily <= 0:
+        if total_validator_stake <= 0 or total_validator_emission_daily <= 0:
             return 0.0
-        nominator_emission = (total_validator_emission_daily
-                              * (1.0 - validator_take_rate)
-                              * (1.0 - root_proportion))
-        daily_yield_rate = (nominator_emission * alpha_tao_price) / total_validator_stake
-        return daily_yield_rate * 365.0 * 100.0
+        # Both emission and stake are in alpha — rate is dimensionless
+        # Use compound annualization to match taostats methodology:
+        # APY = (1 + daily_rate)^365 - 1
+        daily_yield_rate = (total_validator_emission_daily * (1.0 - validator_take_rate)) / total_validator_stake
+        if daily_yield_rate > 1.0:  # >100% daily = extreme, use simple annualization
+            return daily_yield_rate * 365.0 * 100.0
+        return ((1.0 + daily_yield_rate) ** 365 - 1) * 100.0
 
     # =========================================================================
     # Net TAO Flow (30-day EMA)

@@ -175,8 +175,10 @@ def _generate_rankings(all_metrics: dict[int, dict],
                        flow_emas: dict[int, float] | None = None) -> list[dict]:
     """Generate subnet rankings sorted by attractiveness score."""
     rankings = []
-    total_emission_all = sum(
+    # TAO-normalize emissions before computing shares (different alpha tokens)
+    total_emission_tao = sum(
         _safe_float(m.get("data", {}).get("emission_trend", {}).get("current_total_emission", 0.0))
+        * _safe_float(m.get("data", {}).get("roi_estimate", {}).get("alpha_tao_rate", 0.0))
         for m in all_metrics.values()
     )
 
@@ -187,15 +189,14 @@ def _generate_rankings(all_metrics: dict[int, dict],
         net_tao_yield = _safe_float(roi.get("net_tao_yield_per_day", 0.0))
         alpha_price = _safe_float(roi.get("alpha_tao_rate", 0.0))
 
-        # Emission share: this subnet's emission / total network emission
+        # Emission share: this subnet's TAO-value emission / total network TAO emission
         current_emission = _safe_float(
             data.get("emission_trend", {}).get("current_total_emission", 0.0))
-        emission_share = (current_emission / total_emission_all
-                          if total_emission_all > 0 else 0.0)
+        emission_share = (current_emission * alpha_price / total_emission_tao
+                          if total_emission_tao > 0 else 0.0)
 
-        # Pool depth from ROI slippage context (alpha_price × 1000 is a rough proxy
-        # when actual pool_tao isn't in derived output — TODO: wire actual pool_tao)
-        pool_depth = _safe_float(alpha_price * 10000.0 if alpha_price > 0 else 0.0)
+        # Pool depth from actual pool TAO liquidity
+        pool_depth = _safe_float(roi.get("pool_tao_liquidity", 0.0))
 
         # Self-mining risk
         sm_risk = _safe_float(
