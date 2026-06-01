@@ -95,7 +95,7 @@ def handle(event: dict, context: Any) -> dict:
         prev_snapshot = _storage.get_previous_day_snapshot(netuid, date)
 
         # Extract subnet-specific data
-        alpha_price, pool_tao = _extract_alpha_price(alpha_prices, netuid)
+        alpha_price, pool_tao, root_proportion = _extract_alpha_price(alpha_prices, netuid)
         reg_cost_tao = _extract_reg_cost(reg_costs, netuid)
         tempo = _extract_tempo(hyperparams)
         immunity_period = _extract_immunity_period(hyperparams)
@@ -162,7 +162,8 @@ def handle(event: dict, context: Any) -> dict:
         validators = [n for n in neurons if n.dividends > 0]
         total_val_emission = sum(v.emission for v in validators)
         total_val_stake = sum(v.alpha_stake for v in validators)
-        real_apy = MetricsEngine.compute_real_apy(total_val_emission, total_val_stake, alpha_price)
+        real_apy = MetricsEngine.compute_real_apy(
+            total_val_emission, total_val_stake, alpha_price, root_proportion=root_proportion)
         metrics_computed.append("real_apy")
 
         # Validator concentration risk (standalone metric for staking decisions)
@@ -258,19 +259,23 @@ def _build_neurons(neurons_raw: list[dict], tempos_per_day: float):
     return neurons
 
 
-def _extract_alpha_price(alpha_prices: Optional[dict], netuid: int) -> tuple[float, float]:
-    """Extract alpha/TAO price and pool liquidity for a specific subnet."""
+def _extract_alpha_price(alpha_prices: Optional[dict], netuid: int) -> tuple[float, float, float]:
+    """Extract alpha/TAO price, pool liquidity, and root_proportion for a subnet."""
     if not alpha_prices:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0
     data = alpha_prices.get("data", {})
-    # Per-subnet format: {data: {alpha_tao_price: ..., pool_tao_liquidity: ...}}
+    # Per-subnet format: {data: {alpha_tao_price: ..., pool_tao_liquidity: ..., root_proportion: ...}}
     if "alpha_tao_price" in data:
-        return data.get("alpha_tao_price", 0.0), data.get("pool_tao_liquidity", 0.0)
+        return (data.get("alpha_tao_price", 0.0),
+                data.get("pool_tao_liquidity", 0.0),
+                data.get("root_proportion", 0.0))
     # Consolidated format: {data: {prices: [{netuid: N, ...}]}}
     for p in data.get("prices", []):
         if p.get("netuid") == netuid:
-            return p.get("alpha_tao_price", 0.0), p.get("pool_tao_liquidity", 0.0)
-    return 0.0, 0.0
+            return (p.get("alpha_tao_price", 0.0),
+                    p.get("pool_tao_liquidity", 0.0),
+                    p.get("root_proportion", 0.0))
+    return 0.0, 0.0, 0.0
 
 
 def _extract_reg_cost(reg_costs: Optional[dict], netuid: int) -> float:

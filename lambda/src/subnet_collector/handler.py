@@ -168,13 +168,25 @@ async def _collect_hyperparameters(sub, netuid: int, date: str) -> None:
 
 
 async def _collect_alpha_price(sub, netuid: int, date: str) -> None:
-    """Collect and store alpha price for one subnet."""
+    """Collect and store alpha price, pool liquidity, and root proportion inputs."""
     try:
         alpha_price = float(await sub.get_subnet_price(netuid=netuid))
         pool_tao_rao = await sub.substrate.query(
             module="SubtensorModule", storage_function="SubnetTAO", params=[netuid])
         pool_alpha_rao = await sub.substrate.query(
             module="SubtensorModule", storage_function="SubnetAlphaIn", params=[netuid])
+        alpha_out_rao = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetAlphaOut", params=[netuid])
+        tao_weight_raw = await sub.substrate.query(
+            module="SubtensorModule", storage_function="TaoWeight", params=[])
+        tao_root_rao = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetTAO", params=[0])
+
+        tao_weight = int(tao_weight_raw) / 18446744073709551615
+        alpha_supply = (int(pool_alpha_rao) + int(alpha_out_rao)) / 1e9
+        tao_root = int(tao_root_rao) / 1e9
+        root_proportion = ((tao_root * tao_weight) /
+                           (tao_root * tao_weight + alpha_supply)) if alpha_supply > 0 else 1.0
 
         data = {
             "metadata": {"netuid": netuid, "cycle_id": date,
@@ -184,6 +196,10 @@ async def _collect_alpha_price(sub, netuid: int, date: str) -> None:
                 "alpha_tao_price": alpha_price,
                 "pool_tao_liquidity": int(pool_tao_rao) / 1e9,
                 "pool_alpha_liquidity": int(pool_alpha_rao) / 1e9,
+                "alpha_out": int(alpha_out_rao) / 1e9,
+                "alpha_supply": alpha_supply,
+                "tao_weight": tao_weight,
+                "root_proportion": root_proportion,
             },
         }
         _storage.store_snapshot(_storage.get_date_path("raw/alpha-prices", date, netuid), data)

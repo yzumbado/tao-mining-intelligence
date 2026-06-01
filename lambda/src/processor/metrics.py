@@ -1347,6 +1347,7 @@ class MetricsEngine:
         total_validator_stake: float,
         alpha_tao_price: float,
         validator_take_rate: float = 0.18,
+        root_proportion: float = 0.0,
     ) -> float:
         """Compute real annualized yield from actual daily emission data.
 
@@ -1358,18 +1359,20 @@ class MetricsEngine:
                 observed emissions. This is what taostats calls "1D APY" — actual
                 returns in the last day extrapolated to a year.
             formula: |
-                nominator_emission = total_validator_emission × (1 - take_rate)
+                nominator_emission = total_validator_emission × (1 - take_rate) × (1 - root_proportion)
                 daily_yield_rate = (nominator_emission × alpha_price) / total_stake
                 apy = daily_yield_rate × 365 × 100
             output_range: "[0.0, ∞) percent — typically 0.5% to 50%"
             known_issues: |
                 - Extrapolates one day to a year (volatile day = misleading APY)
                 - Uses flat 18% take rate (real is per-validator, 10-18%)
-                - Does not model root proportion split (tao_weight)
+                - root_proportion = 0 when not yet collected (pre-deploy data)
         """
         if total_validator_stake <= 0 or alpha_tao_price <= 0 or total_validator_emission_daily <= 0:
             return 0.0
-        nominator_emission = total_validator_emission_daily * (1.0 - validator_take_rate)
+        nominator_emission = (total_validator_emission_daily
+                              * (1.0 - validator_take_rate)
+                              * (1.0 - root_proportion))
         daily_yield_rate = (nominator_emission * alpha_tao_price) / total_validator_stake
         return daily_yield_rate * 365.0 * 100.0
 
