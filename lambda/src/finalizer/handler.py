@@ -74,8 +74,11 @@ def handle(event: dict, context: Any) -> dict:
         active_subnets = _state_manager.get_active_subnets()
         all_metrics = _read_all_derived_metrics(date, active_subnets)
 
+        # Compute net flow EMAs from stake history
+        flow_emas = _compute_flow_emas(list(all_metrics.keys()))
+
         # Generate rankings
-        rankings = _generate_rankings(all_metrics)
+        rankings = _generate_rankings(all_metrics, flow_emas)
 
         # Generate briefing
         briefing = _generate_briefing(date, cycle_id, all_metrics, active_subnets)
@@ -154,7 +157,22 @@ def _safe_float(value, default: float = 0.0) -> float:
     return f
 
 
-def _generate_rankings(all_metrics: dict[int, dict]) -> list[dict]:
+def _compute_flow_emas(netuids: list[int]) -> dict[int, float]:
+    """Compute net flow EMA for each subnet from stake history."""
+    emas: dict[int, float] = {}
+    for netuid in netuids:
+        history = _state_manager.get_stake_history(netuid)
+        if len(history) >= 2:
+            stakes = [float(item["total_stake"]) for item in history]
+            result = MetricsEngine.compute_net_tao_flow(stakes)
+            emas[netuid] = result["ema_flow"]
+        else:
+            emas[netuid] = 0.0
+    return emas
+
+
+def _generate_rankings(all_metrics: dict[int, dict],
+                       flow_emas: dict[int, float] | None = None) -> list[dict]:
     """Generate subnet rankings sorted by attractiveness score."""
     rankings = []
     total_emission_all = sum(
@@ -183,8 +201,8 @@ def _generate_rankings(all_metrics: dict[int, dict]) -> list[dict]:
         sm_risk = _safe_float(
             data.get("self_mining_risk", {}).get("risk_score", 0.0))
 
-        # Net flow EMA (0.0 until stake history accumulates)
-        net_flow_ema = 0.0  # TODO: read from DynamoDB stake history once available
+        # Net flow EMA from stake history
+        net_flow_ema = (flow_emas or {}).get(netuid, 0.0)
 
         # Risk-adjusted attractiveness score
         score = MetricsEngine.compute_attractiveness_score(
@@ -451,6 +469,36 @@ def _verify_outputs(rankings: list, briefing: dict,
             "severity": "warning",
             "message": "No subnets have source_block_number > 0 in metadata",
         })
+
+    # Phase B: Value-range conformance checks (catch silent-correctness bugs)
+    if len(rankings) > 5:
+        # Check 6: emission component contributing (not all zero)
+        scores = [r.get("attractiveness_score", 0) for r in rankings]
+        spread = max(scores) - min(scores) if scores else 0
+        if spread < 0.1:
+            findings.append({
+                "check": "score_spread_too_low",
+                "severity": "warning",
+                "message": f"Attractiveness score spread is only {spread:.4f} (expected > 0.1)",
+            })
+
+        # Check 7: self_mining_risk > 0 for at least 1 subnet
+        sm_nonzero = sum(1 for r in rankings if r.get("self_mining_risk", 0) > 0)
+        if sm_nonzero == 0:
+            findings.append({
+                "check": "self_mining_risk_all_zero",
+                "severity": "warning",
+                "message": "No subnet has self_mining_risk > 0 — detection may be broken",
+            })
+
+        # Check 8: real_apy_percent > 0 for at least some subnets
+        apy_nonzero = sum(1 for r in rankings if r.get("real_apy_percent", 0) > 0)
+        if apy_nonzero == 0:
+            findings.append({
+                "check": "real_apy_all_zero",
+                "severity": "warning",
+                "message": "No subnet has real_apy_percent > 0 — APY computation may be broken",
+            })
 
     # Log findings as structured JSON
     if findings:

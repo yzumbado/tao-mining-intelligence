@@ -196,8 +196,11 @@ class MetricsEngine:
                 # Queue pressure amplifies: at 0 pressure, risk is halved
                 risk_score = base_risk * (0.5 + 0.5 * queue_pressure)
             else:
-                # Top 75% have minimal risk unless queue pressure is extreme
-                risk_score = 0.1 * queue_pressure * (1.0 - rank_idx / num_miners)
+                # Above bottom quartile: monotonically decreasing from boundary
+                remaining = num_miners - bottom_quartile_size
+                position = rank_idx - bottom_quartile_size
+                min_bq_risk = (1.0 / bottom_quartile_size) * (0.5 + 0.5 * queue_pressure)
+                risk_score = min_bq_risk * (1.0 - (position + 1) / (remaining + 1))
 
             risk_score = max(0.0, min(1.0, risk_score))
 
@@ -1343,6 +1346,7 @@ class MetricsEngine:
         total_validator_emission_daily: float,
         total_validator_stake: float,
         alpha_tao_price: float,
+        validator_take_rate: float = 0.18,
     ) -> float:
         """Compute real annualized yield from actual daily emission data.
 
@@ -1354,16 +1358,19 @@ class MetricsEngine:
                 observed emissions. This is what taostats calls "1D APY" — actual
                 returns in the last day extrapolated to a year.
             formula: |
-                daily_yield_rate = (total_validator_emission × alpha_price) / total_stake
+                nominator_emission = total_validator_emission × (1 - take_rate)
+                daily_yield_rate = (nominator_emission × alpha_price) / total_stake
                 apy = daily_yield_rate × 365 × 100
             output_range: "[0.0, ∞) percent — typically 0.5% to 50%"
             known_issues: |
                 - Extrapolates one day to a year (volatile day = misleading APY)
-                - Does not subtract validator take rate
+                - Uses flat 18% take rate (real is per-validator, 10-18%)
+                - Does not model root proportion split (tao_weight)
         """
         if total_validator_stake <= 0 or alpha_tao_price <= 0 or total_validator_emission_daily <= 0:
             return 0.0
-        daily_yield_rate = (total_validator_emission_daily * alpha_tao_price) / total_validator_stake
+        nominator_emission = total_validator_emission_daily * (1.0 - validator_take_rate)
+        daily_yield_rate = (nominator_emission * alpha_tao_price) / total_validator_stake
         return daily_yield_rate * 365.0 * 100.0
 
     # =========================================================================
@@ -1650,7 +1657,15 @@ def compute_deregistration_risk(
             base_risk = 1.0 - (rank_idx / bottom_quartile_size)
             risk_score = base_risk * (0.5 + 0.5 * queue_pressure)
         else:
-            risk_score = 0.1 * queue_pressure * (1.0 - rank_idx / num_miners)
+            # Above bottom quartile: monotonically decreasing from boundary
+            # Starts just below the minimum bottom-quartile risk and decays to 0
+            remaining = num_miners - bottom_quartile_size
+            position = rank_idx - bottom_quartile_size  # 0-based within above-quartile
+            # Minimum risk in bottom quartile is at rank_idx = bottom_quartile_size - 1:
+            #   (1/bottom_quartile_size) * (0.5 + 0.5*queue_pressure)
+            # We start below that and decay linearly to 0
+            min_bq_risk = (1.0 / bottom_quartile_size) * (0.5 + 0.5 * queue_pressure)
+            risk_score = min_bq_risk * (1.0 - (position + 1) / (remaining + 1))
 
         risks[original_idx] = max(0.0, min(1.0, risk_score))
 

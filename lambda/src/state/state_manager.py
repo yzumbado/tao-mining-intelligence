@@ -600,6 +600,19 @@ class StateManager:
             "netuid": netuid,
         }))
 
+    def get_stake_history(self, netuid: int, days: int = 8) -> list[dict]:
+        """Get recent daily stake totals for a subnet (sorted ascending by date)."""
+        from boto3.dynamodb.conditions import Key as DDBKey
+        try:
+            resp = self._table.query(
+                KeyConditionExpression=DDBKey("PK").eq(f"STAKE_HISTORY#{netuid}"),
+                ScanIndexForward=True,
+                Limit=days,
+            )
+            return resp.get("Items", [])
+        except Exception:
+            return []
+
     def get_basic_profile(self, netuid: int) -> Optional[dict]:
         """Get a single subnet's basic profile."""
         try:
