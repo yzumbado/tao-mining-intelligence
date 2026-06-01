@@ -82,6 +82,7 @@ async def _async_handle(event: dict, context: Any) -> dict:
             await _collect_hyperparameters(sub, netuid, date)
             await _collect_alpha_price(sub, netuid, date)
             await _collect_registration_cost(sub, netuid, date)
+            await _collect_subnet_chain_data(sub, netuid, date)
 
         # Publish processing message
         _publish_processing_message(netuid, date, cycle_id, trace_id)
@@ -224,6 +225,80 @@ async def _collect_registration_cost(sub, netuid: int, date: str) -> None:
         _storage.store_snapshot(_storage.get_date_path("raw/registration-costs", date, netuid), data)
     except Exception as e:
         logger.warning(f"Registration cost failed for netuid={netuid}: {e}")
+
+
+async def _collect_subnet_chain_data(sub, netuid: int, date: str) -> None:
+    """Collect per-subnet chain data (Tier 1: RED + YELLOW per-subnet items)."""
+    try:
+        # RED items
+        ema_flow = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetEmaTaoFlow", params=[netuid])
+        tao_flow = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetTaoFlow", params=[netuid])
+        volume = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetVolume", params=[netuid])
+        regs = await sub.substrate.query(
+            module="SubtensorModule", storage_function="RegistrationsThisInterval", params=[netuid])
+        owner = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetOwner", params=[netuid])
+        tao_in_emission = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetTaoInEmission", params=[netuid])
+        alpha_out_emission = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetAlphaOutEmission", params=[netuid])
+
+        # RED globals (only query once — cached by substrate connection)
+        block_emission = await sub.substrate.query(
+            module="SubtensorModule", storage_function="BlockEmission", params=[])
+        total_stake = await sub.substrate.query(
+            module="SubtensorModule", storage_function="TotalStake", params=[])
+        owner_cut = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetOwnerCut", params=[])
+
+        # YELLOW per-subnet items
+        excess_tao = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetExcessTao", params=[netuid])
+        locked = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetLocked", params=[netuid])
+        moving_price = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetMovingPrice", params=[netuid])
+        protocol_flow = await sub.substrate.query(
+            module="SubtensorModule", storage_function="SubnetProtocolFlow", params=[netuid])
+
+        # Parse SubnetEmaTaoFlow (returns tuple: (block, {bits: I128}))
+        ema_flow_val = 0
+        if isinstance(ema_flow, tuple) and len(ema_flow) >= 2:
+            bits = ema_flow[1]
+            if isinstance(bits, dict):
+                ema_flow_val = bits.get("bits", 0)
+            else:
+                ema_flow_val = int(str(bits)) if bits else 0
+
+        data = {
+            "metadata": {"netuid": netuid, "cycle_id": date,
+                         "collected_at": datetime.now(timezone.utc).isoformat()},
+            "data": {
+                "netuid": netuid,
+                # RED
+                "subnet_ema_tao_flow": ema_flow_val,
+                "subnet_tao_flow": int(str(tao_flow)) if tao_flow else 0,
+                "subnet_volume": int(str(volume)) / 1e9 if volume else 0,
+                "registrations_this_interval": int(str(regs)) if regs else 0,
+                "subnet_owner": str(owner) if owner else "",
+                "tao_in_emission_per_block": int(str(tao_in_emission)) / 1e9 if tao_in_emission else 0,
+                "alpha_out_emission_per_block": int(str(alpha_out_emission)) / 1e9 if alpha_out_emission else 0,
+                "block_emission_tao": int(str(block_emission)) / 1e9 if block_emission else 0,
+                "total_network_stake": int(str(total_stake)) / 1e9 if total_stake else 0,
+                "subnet_owner_cut_pct": int(str(owner_cut)) / 65535 if owner_cut else 0,
+                # YELLOW per-subnet
+                "subnet_excess_tao": int(str(excess_tao)) / 1e9 if excess_tao else 0,
+                "subnet_locked": int(str(locked)) / 1e9 if locked else 0,
+                "subnet_moving_price_raw": str(moving_price) if moving_price else "0",
+                "subnet_protocol_flow": int(str(protocol_flow)) if protocol_flow else 0,
+            },
+        }
+        _storage.store_snapshot(_storage.get_date_path("raw/chain-data", date, netuid), data)
+    except Exception as e:
+        logger.warning(f"Chain data collection failed for netuid={netuid}: {e}")
 
 
 def _publish_processing_message(netuid: int, date: str, cycle_id: str, trace_id: str) -> None:
