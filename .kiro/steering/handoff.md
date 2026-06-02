@@ -215,7 +215,50 @@ lambda/src/
   - `kb/conformance-proof3-test-vs-production.md` — value range comparison
   - `kb/conformance-build-plan.md` — Phase A-E implementation plan
 
-### Session 2026-05-25 Findings (context for next agent):
+### Session 2026-06-01 Findings (context for next agent):
+
+#### Major Accomplishments:
+- **APY formula completely rewritten** — was off by 25x for non-root subnets (units mismatch: TAO ÷ alpha). Now matches taostats within 0.1% (validated against 5 live subnets).
+- **Formula validation gate created** — `scripts/validate_formulas.py` queries live chain, computes APY with taostats formula, asserts ours matches ±20%. Must pass before every deploy.
+- **3 CRITICAL score bugs fixed** — pool_depth (fabricated proxy → real liquidity), emission_share (mixed alphas → TAO-normalized), APY (broken units → compound alpha yield)
+- **3 HIGH metric bugs fixed** — competitive_density (mixed units → occupancy rate), churn cap removed, pool exclusion for missing data
+- **14 new chain fields collected per subnet** (Tier 1: SubnetEmaTaoFlow, SubnetVolume, RegistrationsThisInterval, SubnetOwner, emissions, TotalStake, etc.)
+- **Net flow EMA wired into attractiveness score** (stake history now 7 days, active)
+- **CloudFront cache fix deployed** (30 min TTL + invalidation)
+- **Dead code removed** — rental_profitability, entry_barrier, top_movers (123 lines + schemas + tests)
+- **Daily emission collection started** — enables taoflow_health fix on 2026-06-08
+- **Full chain data inventory** — 217 items catalogued (kb/chain-data-inventory.md)
+
+#### Live Production State (post-deploy):
+- 49-129 subnets (UTC day rollover, fills within hours)
+- SN44: score 0.836, APY 35.8% (was 1.14% before fix)
+- Score spread: 0.79 (was 0.33 — much better differentiation)
+- All conformance checks passing
+- CloudFront serving fresh data (no more 23h stale cache)
+
+#### Pending Tasks (next session):
+
+**Documentation (P1 — 1-2 hours):**
+- [ ] Rewrite `design.md` — still describes old batch orchestration (SNS, completion tracker, monolithic Collector). Current architecture is fundamentally different (AD18 self-scheduling).
+- [ ] Rewrite `requirements.md` — describes old batch model ("triggers at daily time", "complete cycle within 15 min"). No longer accurate.
+- [ ] Full `handoff.md` refresh — update test count (205), remove deleted directories from code structure, update architecture state.
+- [ ] Regenerate `kb/metrics-reference.md` — run `python scripts/generate_metrics_reference.py`. Missing 4 new metrics.
+
+**Deferred Fixes (P2 — documented in kb/metrics-math-audit-2026-06-01.md):**
+- [ ] Fix #4: Entry slippage direction — needs redesign. API price (0.044) ≠ pool spot price (0.024). Use pool_tao/pool_alpha as spot.
+- [ ] Fix #6: taoflow_health always HEALTHY — wire after 2026-06-08 when emission history has 7 days.
+- [ ] MEDIUM fixes: sigmoid scale tuning, hardcoded thresholds → DynamoDB, dead avg_validator_activity field.
+
+**Backlog (P3 — next major feature):**
+- [ ] DeepCollector Lambda (Tiers 2-4) — per-UID and per-hotkey chain data. Spec in `kb/backlog-deep-collector.md`. Builds historical dataset for pattern detection.
+- [ ] Stage 2: RESEARCH — LLM-powered subnet researcher (GitHub scraping, code analysis, difficulty classification)
+
+#### Key Patterns Discovered This Session:
+1. **"Validate against an oracle FIRST"** — We built the APY formula, deployed it, and only compared to taostats 2 weeks later. The POC should have been step 1. Now we have `scripts/validate_formulas.py` as a permanent gate.
+2. **"SN0 masked the bug"** — alpha_price=1.0 on root means any formula involving price multiplication "accidentally works" on SN0 but fails on all other subnets. Always test with subnets where alpha_price ≠ 1.0.
+3. **"Units bugs survive all testing"** — 211 tests passed while APY was 25x wrong. Property tests (≥ 0, bounded, monotone) catch structural bugs but NOT value correctness. You need cross-provider validation.
+4. **"POC before coding"** — The slippage fix (#4) would have been wrong if coded without the POC. The POC revealed a deeper issue (API price ≠ pool spot price) that changed the fix approach entirely.
+5. **"Collect everything now, analyze later"** — Historical chain data can't be backfilled. Collecting Tier 1 (14 fields) and daily emission now builds the dataset for future pattern detection even before we have code to analyze it.
 - SN104 investigation: self-mining subnet (1 miner, 1 validator, same coldkey, "for sale" description) — scored 0.613 mid-pack
 - Const announced emission blocking for self-mining/abandoned/fraudulent subnets
 - Ecosystem research: taostats, TAO Institute (SRI), Taoculator all use Net TAO Flow, real APY, VTrust, pool depth
