@@ -285,7 +285,6 @@ def _generate_briefing(date: str, cycle_id: str,
         "alerts": alerts,
         "new_subnets": new_subnets,
         "removed_subnets": [],
-        "top_movers": [],
         "subnets_processed": len(all_metrics),
         "subnets_failed": len(active_subnets) - len(all_metrics),
     }

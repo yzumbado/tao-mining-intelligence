@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from src.models.enums import (
     Confidence,
     CompetitionTrend,
-    EntryBarrierLevel,
     HardwareTier,
     HoldVsSwap,
     MiningStyle,
@@ -369,29 +368,6 @@ class ValidatorLandscape(BaseModel):
     min_vtrust: float = Field(default=0.0, ge=0.0, le=1.0, description="Minimum VTrust (weakest validator)")
 
 
-class RentalProfitability(BaseModel):
-    """Rental profitability analysis for mining a subnet."""
-
-    cheapest_viable_config: Optional[str] = None
-    recommended_provider: Optional[str] = None
-    daily_rental_cost_usd: float = Field(default=0.0, ge=0.0)
-    daily_tao_yield_usd: float = Field(default=0.0, ge=0.0)
-    daily_profit_usd: float = Field(default=0.0)
-    monthly_rental_cost_usd: float = Field(default=0.0, ge=0.0)
-    monthly_tao_yield: float = Field(default=0.0, ge=0.0)
-    rent_vs_buy_multiplier: float = Field(default=0.0, ge=0.0)
-    rental_profitable: bool = Field(default=False)
-    break_even_tao_price_usd: float = Field(default=0.0, ge=0.0)
-
-
-class EntryBarrier(BaseModel):
-    """Entry barrier assessment for a subnet."""
-
-    score: EntryBarrierLevel
-    registration_cost_tao: float = Field(ge=0.0, description="Registration cost in TAO")
-    registration_cost_usd: float = Field(ge=0.0, description="Registration cost in USD")
-    hardware_tier: HardwareTier
-    estimated_monthly_hardware_cost_usd: float = Field(ge=0.0)
 
 
 class DerivedMetricsData(BaseModel):
@@ -405,8 +381,6 @@ class DerivedMetricsData(BaseModel):
     taoflow_health: TaoflowHealth
     churn: ChurnMetrics
     validator_landscape: ValidatorLandscape
-    rental_profitability: RentalProfitability
-    entry_barrier: EntryBarrier
 
 
 class DerivedMetrics(BaseModel):
@@ -439,7 +413,6 @@ class SubnetRanking(BaseModel):
     mining_style: Optional[MiningStyle] = None
     hardware_tier: Optional[HardwareTier] = None
     taoflow_status: Optional[TaoflowStatus] = None
-    entry_barrier: Optional[EntryBarrierLevel] = None
 
 
 # =============================================================================
@@ -478,9 +451,6 @@ class DailyBriefing(BaseModel):
     new_subnets: list[int] = Field(default_factory=list, description="Newly discovered netuids")
     removed_subnets: list[int] = Field(
         default_factory=list, description="Subnets no longer active"
-    )
-    top_movers: list[int] = Field(
-        default_factory=list, description="Netuids with largest rank changes"
     )
     subnets_processed: int = Field(ge=0)
     subnets_failed: int = Field(ge=0)

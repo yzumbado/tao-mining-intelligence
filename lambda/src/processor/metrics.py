@@ -6,7 +6,6 @@ Implements all algorithms from the design document:
 - Algorithm 3: Reward Distribution Model Detection
 - Algorithm 4: ROI Estimation
 - Algorithm 5: Taoflow Health Detection
-- Algorithm 6: Rental Profitability
 - Algorithm 7: Miner Churn
 - Algorithm 8: Validator Opportunity
 - Competitive Density
@@ -52,7 +51,6 @@ from src.models.schemas import (
     DeregistrationRisk,
     EmissionTrend,
     Neuron,
-    RentalProfitability,
     RewardDistribution,
     ROIEstimate,
     TaoflowHealth,
@@ -677,127 +675,612 @@ class MetricsEngine:
         )
 
     # =========================================================================
-    # Algorithm 6: Rental Profitability
+    # Algorithm 7: Miner Churn
+    # =========================================================================
+    @staticmethod
+    def compute_deregistration_risk(
+        neurons: list[Neuron],
+        current_block: int,
+        immunity_period: int,
+        recent_registrations_24h: int,
+        num_uids: Optional[int] = None,
+        max_uids: Optional[int] = None,
+    ) -> list[DeregistrationRisk]:
+        """Compute deregistration risk for each miner in a subnet.
+
+        Algorithm 1 from design document.
+
+        Risk score: 0.0 (safe) to 1.0 (imminent deregistration).
+
+        Factors:
+        1. Immunity status (immune = 0.0 always)
+        2. Subnet occupancy (empty slots = 0.0 for all)
+        3. Emission rank position (lower rank = higher risk)
+        4. Registration queue pressure (more recent registrations = higher risk)
+
+        Metric:
+            name: Deregistration Risk
+            status: HYPOTHESIS
+            hypothesis: |
+                On a full subnet, the miner with the lowest emission is replaced when
+                a new registrant arrives. Queue pressure (recent registrations) indicates
+                how actively people are trying to enter. Bottom 25% face real risk;
+                top 75% are safe unless registration pressure is extreme.
+            formula: |
+                IF num_uids < max_uids (subnet not full) → risk = 0.0 for all
+                IF miner is immune (blocks_since_reg < immunity_period) → risk = 0.0
+                queue_pressure = min(recent_registrations_24h / 10, 1.0)
+                IF miner in bottom 25% by emission:
+                    base_risk = 1.0 - (rank / bottom_quartile_size)
+                    risk = base_risk × (0.5 + 0.5 × queue_pressure)
+                ELSE: risk = 0.1 × queue_pressure × (1.0 - rank / total_miners)
+            usefulness_mining: Tells you if entering a subnet is risky — high churn means you must be competitive immediately after immunity
+            usefulness_staking: Indirectly useful — high deregistration means competitive subnet (good for validators)
+            usefulness_risk: Track your own miner's risk score over time; exit before deregistration
+            output_range: "[0.0, 1.0] per miner"
+            known_issues: |
+                - Bottom 25% threshold may not be correct for all subnets
+                - Queue pressure cap of 10 registrations/day may be too low for popular subnets
+                - pruning_score field exists in SDK docs but returns empty list in v10
+            assumptions: |
+                - Is the bottom 25% threshold correct?
+                - Does queue_pressure of 10/day represent max pressure?
+                - Will pruning_score become available in future SDK versions?
+
+        Args:
+            neurons: All neurons in the subnet metagraph.
+            current_block: Current blockchain block number.
+            immunity_period: Blocks of immunity after registration (from hyperparams).
+            recent_registrations_24h: Number of registrations in the last 24 hours.
+
+        Returns:
+            List of DeregistrationRisk for each miner.
+        """
+        # Identify miners (non-validators or those with incentive)
+        miners = [n for n in neurons if n.incentive > 0 or not n.is_validator]
+
+        if not miners:
+            return []
+
+        # DECISION: DEREG-001
+        # Choice: Use num_uids >= max_uids for subnet fullness (not sum(active))
+        # Alternatives rejected: sum(active) — active means "set weights recently", not "slot occupied"
+        # Rationale: Official Bittensor docs define num_uids/max_uids for this purpose.
+        #   Live data shows subnets with 256 registered neurons but only 12 active=True.
+        # Revisit when: Bittensor changes deregistration mechanics
+        # Evidence: Live chain SN95: num_uids=256, max_uids=256, active.sum()=12
+        if num_uids is not None and max_uids is not None:
+            subnet_full = num_uids >= max_uids
+        else:
+            # Backward compat: fall back to counting neurons with non-default hotkeys
+            subnet_full = len(neurons) >= 256  # conservative default
+
+        if not subnet_full:
+            return [
+                DeregistrationRisk(
+                    uid=m.uid,
+                    hotkey=m.hotkey,
+                    risk_score=0.0,
+                    emission_rank=0,
+                    immune=True,
+                )
+                for m in miners
+            ]
+
+        # Sort miners by emission ascending (lowest emission = most at risk)
+        miners_sorted = sorted(miners, key=lambda m: m.emission)
+        num_miners = len(miners_sorted)
+
+        risks: list[DeregistrationRisk] = []
+        for rank_idx, miner in enumerate(miners_sorted):
+            # Check immunity
+            blocks_since_reg = current_block - miner.block_at_registration
+            is_immune = blocks_since_reg < immunity_period
+
+            if is_immune:
+                risks.append(
+                    DeregistrationRisk(
+                        uid=miner.uid,
+                        hotkey=miner.hotkey,
+                        risk_score=0.0,
+                        emission_rank=rank_idx,
+                        immune=True,
+                    )
+                )
+                continue
+
+            # Queue pressure multiplier: 0 registrations = 0, 10+ = max (1.0)
+            queue_pressure = min(recent_registrations_24h / 10.0, 1.0)
+
+            # Only bottom 25% of miners face meaningful risk
+            bottom_quartile_size = max(1, int(num_miners * 0.25))
+
+            if rank_idx < bottom_quartile_size:
+                # rank_idx 0 = lowest emission = highest risk
+                # base_risk: 1.0 for rank 0, decreasing toward 0.0 at quartile boundary
+                base_risk = 1.0 - (rank_idx / bottom_quartile_size)
+                # Queue pressure amplifies: at 0 pressure, risk is halved
+                risk_score = base_risk * (0.5 + 0.5 * queue_pressure)
+            else:
+                # Above bottom quartile: monotonically decreasing from boundary
+                remaining = num_miners - bottom_quartile_size
+                position = rank_idx - bottom_quartile_size
+                min_bq_risk = (1.0 / bottom_quartile_size) * (0.5 + 0.5 * queue_pressure)
+                risk_score = min_bq_risk * (1.0 - (position + 1) / (remaining + 1))
+
+            risk_score = max(0.0, min(1.0, risk_score))
+
+            risks.append(
+                DeregistrationRisk(
+                    uid=miner.uid,
+                    hotkey=miner.hotkey,
+                    risk_score=risk_score,
+                    emission_rank=rank_idx,
+                    immune=False,
+                )
+            )
+
+        return risks
+
+
+    # =========================================================================
+    # Algorithm 2: Gini Coefficient
     # =========================================================================
 
     @staticmethod
-    def compute_rental_profitability(
-        net_tao_yield_per_day: float,
-        tao_usd_price: float,
-        hardware_tier: str,
-        cloud_pricing: dict[str, dict[str, float]],
-    ) -> RentalProfitability:
-        """Determine if renting cloud GPUs to mine is profitable.
+    def compute_gini_coefficient(emissions: list[float]) -> float:
+        """Compute Gini coefficient of emission distribution.
 
-        Algorithm 6 from design document.
+        Algorithm 2 from design document.
+
+        Uses the O(n log n) sorted-array formula:
+            G = (2 * sum((i+1) * x_i)) / (n * sum(x_i)) - (n+1)/n
 
         Metric:
-            name: Rental Profitability
-            status: HYPOTHESIS
+            name: Gini Coefficient
+            status: PROVEN
             hypothesis: |
-                Mining is only worth it if rent_vs_buy_multiplier > 1.0 — meaning you earn
-                more TAO by mining than you could buy with the same money spent on GPU rental.
-                This accounts for the opportunity cost of renting.
+                Standard economics measure of inequality. Measures how concentrated
+                rewards are among miners. Gini 0.9+ means almost all emission goes to
+                a few miners (WTA). Gini 0.3 means rewards are spread relatively evenly.
             formula: |
-                daily_rental_cost = cheapest_viable_gpu_hourly × 24
-                daily_tao_value_usd = net_tao_yield × tao_usd_price
-                daily_profit_usd = daily_tao_value_usd - daily_rental_cost
-                rent_vs_buy = net_tao_yield / (daily_rental_cost / tao_usd_price)
-                break_even_tao_price = daily_rental_cost / net_tao_yield
-            usefulness_mining: THE decision metric for "should I rent a GPU to mine this subnet?"
-            usefulness_staking: Not directly relevant (validators don't need GPUs)
-            usefulness_risk: break_even_tao_price tells you how far TAO can drop before mining is unprofitable
-            output_range: "rental_profitable: bool; rent_vs_buy_multiplier: [0, ∞)"
-            known_issues: |
-                - NOT CALLED IN PRODUCTION — requires hardware_tier from Stage 2 and cloud_pricing from external APIs
-                - Hardware tier mapping is static (hardcoded GPU configs per tier)
-                - Doesn't account for setup time, bandwidth costs, or spot instance interruptions
-            assumptions: |
-                - Are the tier-to-GPU mappings correct?
-                - Which cloud providers should be included? (RunPod, Vast.ai, Lambda Labs, AWS spot)
-                - How to keep pricing current?
-
-        Core metrics:
-        - daily_profit_usd = (net_tao_yield x tao_usd) - daily_rental_cost
-        - rent_vs_buy_multiplier = tao_earned_by_mining / tao_buyable_with_rental_cost
-        - break_even_tao_price = daily_rental_cost / net_tao_yield_per_day
-
-        Args:
-            net_tao_yield_per_day: Expected daily TAO yield from mining.
-            tao_usd_price: Current TAO/USD price.
-            hardware_tier: Hardware tier string (e.g., "CONSUMER_GPU").
-            cloud_pricing: Nested dict {provider: {gpu_config: hourly_rate_usd}}.
+                Given sorted positive emissions [x₁, x₂, ..., xₙ] (ascending):
+                G = (2 × Σᵢ (i+1)×xᵢ) / (n × Σxᵢ) - (n+1)/n
+                Edge cases: empty/all-zero → 0.0, single value → 0.0
+            usefulness_mining: High Gini = must be top-few or earn nothing. Low Gini = even mediocre miners earn.
+            usefulness_staking: High Gini subnets have more predictable top performers (stable for validators)
+            usefulness_risk: Primary input to Reward Distribution Model detection
+            output_range: "[0.0, 1.0] — 0 = equality, 1 = one miner gets everything"
+            known_issues: None — standard formula
+            assumptions: None — mathematically proven
 
         Returns:
-            RentalProfitability with cost analysis and recommendation.
+            0.0 = perfect equality (all miners earn the same)
+            1.0 = perfect inequality (one miner earns everything)
+
+        Edge cases:
+            - Empty list -> 0.0
+            - All zeros -> 0.0
+            - Single value -> 0.0
         """
-        # Map hardware tier to viable GPU configs
-        tier_to_configs: dict[str, list[str]] = {
-            "CPU_ONLY": [],
-            "CONSUMER_GPU": ["RTX 4090", "RTX 3090"],
-            "DATACENTER_GPU": ["A100 40GB", "A100 80GB"],
-            "MULTI_GPU": ["2xA100", "4xA100"],
-            "SPECIALIZED": ["H100", "8xH100"],
-        }
+        if not emissions or all(e == 0 for e in emissions):
+            return 0.0
 
-        viable_configs = tier_to_configs.get(hardware_tier, [])
-        if not viable_configs:
-            # CPU-only or unknown tier: no GPU rental needed
-            return RentalProfitability(rental_profitable=False)
+        # Filter to positive emissions only (active miners)
+        values = sorted([e for e in emissions if e > 0])
+        n = len(values)
 
-        # Find cheapest viable option across all providers
-        best_option: Optional[tuple[str, str, float]] = None
-        best_daily_cost = float("inf")
+        if n <= 1:
+            return 0.0
 
-        for provider, configs in cloud_pricing.items():
-            for config_name, hourly_rate in configs.items():
-                if config_name in viable_configs:
-                    daily_cost = hourly_rate * 24
-                    if daily_cost < best_daily_cost:
-                        best_daily_cost = daily_cost
-                        best_option = (provider, config_name, daily_cost)
+        # O(n log n) Gini using sorted array
+        cumulative_sum = sum(values)
+        weighted_sum = sum((i + 1) * v for i, v in enumerate(values))
 
-        if best_option is None:
-            # No pricing data for viable configs
-            return RentalProfitability(rental_profitable=False)
+        gini = (2.0 * weighted_sum) / (n * cumulative_sum) - (n + 1.0) / n
+        return max(0.0, min(1.0, gini))
 
-        provider, config, daily_cost = best_option
+    # =========================================================================
+    # Algorithm 3: Reward Distribution Model Detection
+    # =========================================================================
 
-        # Daily profit/loss
-        daily_tao_value_usd = net_tao_yield_per_day * tao_usd_price
-        daily_profit_usd = daily_tao_value_usd - daily_cost
+    @staticmethod
+    def _has_tiered_pattern(sorted_emissions: list[float]) -> bool:
+        """Detect step-function pattern in emission distribution.
 
-        # Rent-vs-buy multiplier: TAO mined vs TAO buyable with rental cost
-        tao_buyable_per_day = (
-            daily_cost / tao_usd_price if tao_usd_price > 0 else 0.0
-        )
-        rent_vs_buy = (
-            net_tao_yield_per_day / tao_buyable_per_day
-            if tao_buyable_per_day > 0
-            else 0.0
-        )
+        Looks for significant gaps (>50% drop) between adjacent miners
+        in the sorted emission list. A tiered pattern has 1-3 such gaps,
+        indicating 2-4 distinct reward tiers.
 
-        # Break-even TAO price: price at which mining revenue equals rental cost
-        break_even = (
-            daily_cost / net_tao_yield_per_day
+        Args:
+            sorted_emissions: Emissions sorted in descending order.
+
+        Returns:
+            True if a tiered pattern is detected.
+        """
+        if len(sorted_emissions) < 6:
+            return False
+
+        significant_gaps = 0
+        for i in range(1, len(sorted_emissions)):
+            if sorted_emissions[i - 1] > 0:
+                ratio = sorted_emissions[i] / sorted_emissions[i - 1]
+                if ratio < 0.5:  # More than 50% drop
+                    significant_gaps += 1
+
+        # Tiered = 2-4 distinct tiers (1-3 significant gaps)
+        return 1 <= significant_gaps <= 3
+
+    @staticmethod
+    def detect_reward_distribution_model(
+        emissions: list[float],
+    ) -> tuple[RewardModel, float, float]:
+        """Classify subnet reward distribution model.
+
+        Algorithm 3 from design document.
+
+        Metric:
+            name: Reward Distribution Model
+            status: HYPOTHESIS
+            hypothesis: |
+                Subnets fall into distinct reward patterns: WTA (top 3 capture >70%),
+                PROPORTIONAL (Gini < 0.5, all earn proportionally), TIERED (distinct
+                quality thresholds create step-function in emissions). Classification
+                determines what "winning" means on each subnet.
+            formula: |
+                top_3_share = sum(top 3 emissions) / sum(all emissions)
+                gini = compute_gini_coefficient(active_emissions)
+                IF top_3_share > 0.70 → WINNER_TAKES_ALL
+                ELIF gini < 0.5 → PROPORTIONAL
+                ELIF has_tiered_pattern (1-3 gaps with >50% drop) → TIERED
+                ELSE → UNKNOWN
+            usefulness_mining: Critical — on WTA you must be top-3 or earn nothing; on PROPORTIONAL even mediocre miners earn
+            usefulness_staking: WTA subnets have more predictable top performers → stable validator returns
+            usefulness_risk: Determines strategy — WTA requires excellence, PROPORTIONAL allows mediocrity
+            output_range: "Enum {WINNER_TAKES_ALL, PROPORTIONAL, TIERED, UNKNOWN} + gini + top_3_concentration"
+            known_issues: |
+                - 70% WTA threshold is an educated guess, not empirically derived
+                - Gini < 0.5 for PROPORTIONAL may be too generous
+                - Tiered pattern detection is heuristic (gap-based)
+            assumptions: |
+                - Is 70% the right WTA threshold?
+                - Is Gini < 0.5 the right PROPORTIONAL boundary?
+                - First live run confirmed 4/247 miners earn on SN1 — validates WTA detection
+
+        Classification rules:
+        - WINNER_TAKES_ALL: top 3 miners > 70% of total emission
+        - PROPORTIONAL: Gini < 0.5
+        - TIERED: distinct emission clusters (step-function pattern)
+        - UNKNOWN: doesn't fit above categories
+
+        Args:
+            emissions: List of emission values for all neurons.
+
+        Returns:
+            Tuple of (RewardModel enum, gini_coefficient, top_3_concentration).
+        """
+        active_emissions = [e for e in emissions if e > 0]
+
+        if len(active_emissions) < 3:
+            return (RewardModel.UNKNOWN, 0.0, 1.0)
+
+        total = sum(active_emissions)
+        sorted_desc = sorted(active_emissions, reverse=True)
+
+        top_3_share = sum(sorted_desc[:3]) / total if total > 0 else 0.0
+        gini = MetricsEngine.compute_gini_coefficient(active_emissions)
+
+        # Check WTA first (most restrictive)
+        if top_3_share > 0.70:
+            return (RewardModel.WINNER_TAKES_ALL, gini, top_3_share)
+
+        # Check proportional
+        if gini < 0.5:
+            return (RewardModel.PROPORTIONAL, gini, top_3_share)
+
+        # Check for tiered pattern
+        if MetricsEngine._has_tiered_pattern(sorted_desc):
+            return (RewardModel.TIERED, gini, top_3_share)
+
+        return (RewardModel.UNKNOWN, gini, top_3_share)
+
+
+    # =========================================================================
+    # Algorithm 4: ROI Estimation
+    # =========================================================================
+
+    @staticmethod
+    def _estimate_slippage(
+        sell_amount_alpha: float, alpha_price: float, pool_tao: float
+    ) -> float:
+        """Estimate slippage for selling alpha tokens using constant product AMM.
+
+        Metric:
+            name: AMM Slippage Estimation
+            status: HYPOTHESIS
+            hypothesis: |
+                When selling alpha for TAO, the AMM pool moves against you. Larger sells
+                relative to pool size = more slippage. This is a CONSERVATIVE UPPER BOUND
+                because Bittensor also supports concentrated liquidity (Uniswap V3-style).
+            formula: |
+                pool_alpha = pool_tao / alpha_price
+                k = pool_tao × pool_alpha
+                new_pool_alpha = pool_alpha + sell_amount
+                actual_tao = pool_tao - (k / new_pool_alpha)
+                slippage = 1 - (actual_tao / (sell_amount × alpha_price))
+            usefulness_mining: "Can I actually realize this yield?" — high slippage means paper yield > real yield
+            usefulness_staking: Same — validator dividends in alpha need conversion to TAO
+            usefulness_risk: Subnets with thin pools are risky even if yield looks good
+            output_range: "[0.0, 1.0] — 0 = no slippage, 1 = cannot sell"
+            known_issues: |
+                - Conservative upper bound — real slippage may be lower with concentrated liquidity
+                - Doesn't account for multiple sells over time (pool recovers between trades)
+            assumptions: |
+                - Is constant-product the right model for Bittensor's base pool?
+                - How much does concentrated liquidity reduce actual slippage?
+
+        For constant product AMM: x * y = k
+        Slippage = 1 - (actual_output / expected_output)
+
+        Args:
+            sell_amount_alpha: Amount of alpha tokens to sell.
+            alpha_price: Current alpha/TAO exchange rate.
+            pool_tao: TAO liquidity in the AMM pool.
+
+        Returns:
+            Slippage as a decimal in [0.0, 1.0]. 1.0 means cannot sell.
+        """
+        if pool_tao <= 0 or alpha_price <= 0:
+            return 1.0  # 100% slippage = can't sell
+
+        if sell_amount_alpha <= 0:
+            return 0.0
+
+        # Derive pool alpha from price: price = tao/alpha -> alpha = tao/price
+        pool_alpha = pool_tao / alpha_price
+        k = pool_tao * pool_alpha
+
+        # After selling `sell_amount_alpha` into pool:
+        new_pool_alpha = pool_alpha + sell_amount_alpha
+        new_pool_tao = k / new_pool_alpha
+        actual_tao_received = pool_tao - new_pool_tao
+
+        expected_tao = sell_amount_alpha * alpha_price
+
+        if expected_tao <= 0:
+            return 0.0
+
+        slippage = 1.0 - (actual_tao_received / expected_tao)
+        # Floor at 0: floating point noise can produce tiny negative values
+        # or non-monotonic results at extremely small sell/pool ratios
+        slippage = max(0.0, min(1.0, slippage))
+        # Treat sub-microscoptic slippage as zero (floating point noise)
+        if slippage < 1e-7:
+            slippage = 0.0
+        return slippage
+
+    @staticmethod
+    def compute_roi_estimates(
+        neurons: list[Neuron],
+        registration_cost_tao: float,
+        alpha_tao_price: float,
+        pool_tao_liquidity: float,
+        historical_alpha_prices: Optional[list[float]] = None,
+    ) -> ROIEstimate:
+        """Compute net TAO yield and payback timeline for mining a subnet.
+
+        Algorithm 4 from design document.
+
+        Metric:
+            name: ROI Estimation (Net TAO Yield)
+            status: HYPOTHESIS
+            hypothesis: |
+                If you register on this subnet and perform at the average earning miner
+                level, this is what you'd earn. The alpha→TAO conversion via the AMM pool
+                determines your real return. Averages across EARNING miners only (emission > 0)
+                to avoid dilution by zero-earners on WTA subnets.
+            formula: |
+                miner_emissions = [n.emission for n if n.incentive > 0]  # already daily
+                avg_daily_alpha = sum(miner_emissions) / len(miner_emissions)
+                net_tao_yield_per_day = avg_daily_alpha × alpha_tao_price
+                days_to_recoup = registration_cost_tao / net_tao_yield_per_day
+                thirty_day_projection = (net_tao_yield × 30) - registration_cost
+            usefulness_mining: Primary decision metric — "is this subnet worth entering?"
+            usefulness_staking: The validator variant (Metric 8) is the staking equivalent
+            usefulness_risk: days_to_recoup tells you how long your capital is at risk
+            output_range: "net_tao_yield: [0, ∞) TAO/day; days_to_recoup: [0, ∞]; thirty_day: (-∞, ∞) TAO"
+            known_issues: |
+                - Average emission is misleading on WTA subnets (most earn 0, avg pulled up by top)
+                - No adjustment for YOUR likely rank position — assumes you'd be average
+                - Slippage estimate is conservative upper bound (ignores concentrated liquidity)
+            assumptions: |
+                - Does averaging across earning miners give a realistic estimate?
+                - Should we use median instead of mean for WTA subnets?
+                - Is constant-product AMM slippage model accurate for Bittensor pools?
+                - Is 5% over 7 days the right hold-vs-swap threshold?
+
+        Core formula:
+        - net_tao_yield_per_day = avg_daily_alpha_emission_per_miner x alpha_tao_price
+        - days_to_recoup = registration_cost_tao / net_tao_yield_per_day
+        - thirty_day_projection = (net_tao_yield_per_day x 30) - registration_cost_tao
+
+        Args:
+            neurons: All neurons in the subnet.
+            registration_cost_tao: Cost to register in TAO.
+            alpha_tao_price: Current alpha/TAO exchange rate.
+            pool_tao_liquidity: TAO in the AMM pool.
+            historical_alpha_prices: Optional 7-day price history for trend analysis.
+
+        Returns:
+            ROIEstimate with yield, payback, and projection data.
+        """
+        miner_emissions = [
+            n.emission for n in neurons if n.incentive > 0
+        ]
+
+        if not miner_emissions or alpha_tao_price <= 0:
+            return ROIEstimate(
+                net_tao_yield_per_day=0.0,
+                days_to_recoup=float("inf"),
+                thirty_day_projected_tao=-registration_cost_tao,
+                alpha_tao_rate=max(0.0, alpha_tao_price),
+                slippage_estimate_percent=0.0,
+                hold_vs_swap_recommendation=HoldVsSwap.SWAP,
+                confidence=Confidence.LOW,
+            )
+
+        # Average daily alpha emission per miner
+        avg_alpha_emission = sum(miner_emissions) / len(miner_emissions)
+
+        # Convert to TAO equivalent
+        net_tao_yield_per_day = avg_alpha_emission * alpha_tao_price
+
+        # Days to recoup registration cost
+        days_to_recoup = (
+            registration_cost_tao / net_tao_yield_per_day
             if net_tao_yield_per_day > 0
-            else 0.0
+            else float("inf")
         )
 
-        return RentalProfitability(
-            cheapest_viable_config=config,
-            recommended_provider=provider,
-            daily_rental_cost_usd=daily_cost,
-            daily_tao_yield_usd=daily_tao_value_usd,
-            daily_profit_usd=daily_profit_usd,
-            monthly_rental_cost_usd=daily_cost * 30,
-            monthly_tao_yield=net_tao_yield_per_day * 30,
-            rent_vs_buy_multiplier=rent_vs_buy,
-            rental_profitable=rent_vs_buy > 1.0,
-            break_even_tao_price_usd=break_even,
+        # 30-day projection (net of registration cost)
+        thirty_day_tao = (net_tao_yield_per_day * 30) - registration_cost_tao
+
+        # Slippage estimate based on liquidity
+        slippage = MetricsEngine._estimate_slippage(
+            avg_alpha_emission, alpha_tao_price, pool_tao_liquidity
+        )
+
+        # Hold vs swap recommendation based on alpha price trend
+        hold_vs_swap = HoldVsSwap.SWAP  # default: convert to TAO immediately
+        if historical_alpha_prices and len(historical_alpha_prices) >= 7:
+            first_price = historical_alpha_prices[0]
+            if first_price > 0:
+                price_trend = (
+                    historical_alpha_prices[-1] - first_price
+                ) / first_price
+                if price_trend > 0.05:  # Alpha appreciating > 5% over 7 days
+                    hold_vs_swap = HoldVsSwap.HOLD
+
+        # Confidence based on data availability
+        confidence = (
+            Confidence.HIGH
+            if historical_alpha_prices and len(historical_alpha_prices) >= 7
+            else Confidence.LOW
+        )
+
+        return ROIEstimate(
+            net_tao_yield_per_day=net_tao_yield_per_day,
+            days_to_recoup=days_to_recoup,
+            thirty_day_projected_tao=thirty_day_tao,
+            alpha_tao_rate=alpha_tao_price,
+            slippage_estimate_percent=slippage,
+            hold_vs_swap_recommendation=hold_vs_swap,
+            confidence=confidence,
         )
 
 
+    # =========================================================================
+    # Algorithm 5: Taoflow Health Detection
+    # =========================================================================
+
+    @staticmethod
+    def compute_taoflow_health(
+        stake_history: list[float],
+        emission_history: list[float],
+    ) -> TaoflowHealth:
+        """Detect subnets entering death spiral under Taoflow emission model.
+
+        Algorithm 5 from design document.
+
+        Metric:
+            name: Taoflow Health
+            status: NEEDS_VALIDATION
+            hypothesis: |
+                Under Bittensor's Taoflow model, subnets compete for stake. When stakers
+                leave (negative flow), emission share decreases, causing more stakers to
+                leave → death spiral. 3+ consecutive negative days = warning. 7+ days with
+                >25% emission decline = critical.
+            formula: |
+                daily_flows = [stake[i] - stake[i-1] for each day]
+                consecutive_negative = count from most recent backward
+                IF consecutive_negative >= 7 AND emission declined > 25%: DEATH_SPIRAL_RISK
+                ELIF consecutive_negative >= 3: DECLINING
+                ELSE: HEALTHY
+            usefulness_mining: Don't enter a dying subnet — registration cost is wasted if emission drops to zero
+            usefulness_staking: CRITICAL — primary risk signal for validators. Death spiral = staked TAO earns less and less
+            usefulness_risk: Detect declining subnets early → exit before the crowd
+            output_range: "Enum {HEALTHY, DECLINING, DEATH_SPIRAL_RISK}"
+            known_issues: |
+                - CURRENTLY DORMANT — always returns HEALTHY because we don't accumulate stake history yet
+                - Needs 7+ days of history before becoming meaningful
+                - Passes empty lists ([], []) in production
+            assumptions: |
+                - Is 3 days the right threshold for DECLINING?
+                - Is 25% emission decline the right threshold for DEATH_SPIRAL?
+                - To activate: accumulate daily total_validator_stake and total_emission per subnet
+
+        Rules:
+        - "healthy": fewer than 3 consecutive negative staking flow days
+        - "declining": net staking flow negative for 3-6 consecutive days
+        - "death_spiral_risk": negative flow 7+ days AND emission down >25%
+
+        Args:
+            stake_history: Daily total stake values, most recent last.
+            emission_history: Daily total emission values, most recent last.
+
+        Returns:
+            TaoflowHealth with status, net flow, and consecutive negative days.
+        """
+        if len(stake_history) < 2:
+            return TaoflowHealth(
+                status=TaoflowStatus.HEALTHY,
+                net_staking_flow_tao=0.0,
+                consecutive_negative_days=0,
+            )
+
+        # Compute daily net staking flows
+        daily_flows = [
+            stake_history[i] - stake_history[i - 1]
+            for i in range(1, len(stake_history))
+        ]
+
+        # Count consecutive negative days (from most recent)
+        consecutive_negative = 0
+        for flow in reversed(daily_flows):
+            if flow < 0:
+                consecutive_negative += 1
+            else:
+                break
+
+        # Current net flow (most recent day)
+        current_flow = daily_flows[-1] if daily_flows else 0.0
+
+        # Check death spiral: 7+ negative days AND emission decline > 25%
+        if consecutive_negative >= 7 and len(emission_history) >= 8:
+            emission_7d_ago = emission_history[-8]
+            emission_now = emission_history[-1]
+            if emission_7d_ago > 0:
+                emission_decline = (emission_7d_ago - emission_now) / emission_7d_ago
+                if emission_decline > 0.25:
+                    return TaoflowHealth(
+                        status=TaoflowStatus.DEATH_SPIRAL_RISK,
+                        net_staking_flow_tao=current_flow,
+                        consecutive_negative_days=consecutive_negative,
+                    )
+
+        # Check declining: 3+ consecutive negative days
+        if consecutive_negative >= 3:
+            return TaoflowHealth(
+                status=TaoflowStatus.DECLINING,
+                net_staking_flow_tao=current_flow,
+                consecutive_negative_days=consecutive_negative,
+            )
+
+        return TaoflowHealth(
+            status=TaoflowStatus.HEALTHY,
+            net_staking_flow_tao=current_flow,
+            consecutive_negative_days=consecutive_negative,
+        )
     # =========================================================================
     # Algorithm 7: Miner Churn
     # =========================================================================

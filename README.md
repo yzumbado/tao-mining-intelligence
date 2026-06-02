@@ -9,12 +9,12 @@ Autonomous data collection and processing system for Bittensor subnet mining/val
 ## Sample Output
 
 ```
-SN 0 | Score: 0.940 | 46.69 TAO/day | 30d: 1,400 TAO
-SN 4 | Score: 0.935 | 49.87 TAO/day | 30d: 1,496 TAO
-SN 1 | Score: 0.949 |  7.55 TAO/day | 30d:   227 TAO
+SN44 | Score: 0.836 | 90.7 TAO/day | APY: 35.8% | Risk: clean
+SN13 | Score: 0.596 |  0.1 TAO/day | APY: 67.7% | Risk: clean
+SN 1 | Score: 0.557 |  7.2 TAO/day | APY: 77.3% | Risk: low
 ```
 
-Per-subnet intelligence includes: reward model (WTA/distributed), Gini coefficient, competitive density, deregistration risk, emission trends, validator landscape, taoflow health, and ROI estimates.
+Per-subnet intelligence includes: reward model (WTA/distributed), Gini coefficient, deregistration risk, emission trends, validator landscape, self-mining risk, concentration risk, real APY, net TAO flow, and attractiveness score.
 
 ## Status
 
@@ -24,7 +24,7 @@ Per-subnet intelligence includes: reward model (WTA/distributed), Gini coefficie
 |-------|--------|-------------|
 | 1. Validation | ✅ Complete | SDK connectivity, DynamoDB, SQS/SNS validated |
 | 2. Core Infrastructure | ✅ Complete | StateManager, StorageLayer, Instrumentation, Validation, Circuit Breaker |
-| 3. Metrics Engine | ✅ Complete | 11 algorithms with 102 passing tests (property + unit) |
+| 3. Metrics Engine | ✅ Complete | 15 algorithms with property + unit tests |
 | 4. Lambda Handlers | ✅ Complete | Collector ✅, Processor ✅, Finalizer ✅ |
 | 5. Site & Deployment | ✅ Complete | Jinja2 site, CDK, E2E test, sanity check |
 
@@ -41,7 +41,7 @@ source .venv/bin/activate
 # Install dependencies (includes dev tools: pytest, hypothesis, moto)
 pip install -e ".[dev]"
 
-# Run tests (180 passing as of 2026-05-17)
+# Run tests (205 passing as of 2026-06-01)
 pytest tests/ -v
 
 # Validate SDK connectivity (requires internet)
@@ -102,7 +102,6 @@ Finalizer Lambda (aggregator, invoked after each subnet)
 │   │   ├── processor/        # Metrics engine + handler
 │   │   ├── discovery/        # Discovery Lambda (hourly safety net)
 │   │   ├── subnet_collector/ # SubnetCollector Lambda (per-subnet)
-│   │   ├── collector/        # Legacy monolithic collector (reference)
 │   │   ├── finalizer/        # Finalizer Lambda (aggregator)
 │   │   ├── state/            # DynamoDB state manager
 │   │   ├── storage/          # S3/local storage layer
@@ -117,7 +116,7 @@ Finalizer Lambda (aggregator, invoked after each subnet)
 │   ├── integration/          # End-to-end tests
 │   └── cdk/                  # Infrastructure tests
 ├── scripts/                  # Validation and utility scripts
-└── config/schemas/           # JSON Schema definitions
+└── pyproject.toml            # Package configuration
 ```
 
 ## Key Design Decisions

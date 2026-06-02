@@ -1,9 +1,13 @@
 # Bug: Staking APY Overstated — Missing Validator Take Rate and Root Proportion
 
-**Status**: OPEN
-**Severity**: bug
-**Detected**: 2026-05-19 (manual review against taostats)
-**Affects**: `/data/staking_rankings.json` — all 129 entries
+**Status**: SUPERSEDED by `kb/metrics-math-audit-2026-06-01.md`
+**Resolution**: The real bug was a units mismatch (TAO ÷ alpha = meaningless), not "overstated by 1.6x".
+Formula rewritten 2026-06-01: removed alpha_price, switched to compound annualization.
+SN44 went from 1.14% (broken) to 35.83% (matches taostats within 0.1%).
+
+---
+
+*Original diagnosis below (INCORRECT — kept for historical context):*
 
 ---
 

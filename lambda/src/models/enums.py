@@ -61,14 +61,6 @@ class HardwareTier(str, Enum):
     SPECIALIZED = "SPECIALIZED"
 
 
-class EntryBarrierLevel(str, Enum):
-    """Overall entry barrier assessment for a subnet."""
-
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
-    VERY_HIGH = "VERY_HIGH"
-
 
 class CompetitionTrend(str, Enum):
     """Direction of competitive pressure in a subnet."""
