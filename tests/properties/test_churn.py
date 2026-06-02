@@ -57,7 +57,7 @@ class TestMinerChurnProperties:
         expected_new = len(current_set - previous_set)
         expected_departed = len(previous_set - current_set)
         expected_churn = (expected_new + expected_departed) / len(current_set)
-        expected_churn = min(1.0, expected_churn)  # Clamped
+        expected_churn = max(0.0, expected_churn)  # Non-negative only
 
         assert abs(result.daily_churn_rate - expected_churn) < 1e-10, (
             f"Churn rate {result.daily_churn_rate} != expected {expected_churn}"
@@ -165,4 +165,4 @@ class TestMinerChurnProperties:
             current_block=5000,
         )
 
-        assert 0.0 <= result.daily_churn_rate <= 1.0
+        assert result.daily_churn_rate >= 0.0

@@ -863,7 +863,7 @@ class MetricsEngine:
             else 0.0
         )
         # Clamp to [0, 1]
-        churn_rate = max(0.0, min(1.0, churn_rate))
+        churn_rate = max(0.0, churn_rate)
 
         # Average miner lifespan in blocks
         lifespans = [
@@ -1100,62 +1100,26 @@ class MetricsEngine:
     # =========================================================================
 
     @staticmethod
-    def compute_competitive_density(neurons: list[Neuron]) -> float:
-        """Compute competitive density as active miners / total miner emission.
+    def compute_competitive_density(neurons: list[Neuron], max_uids: int = 256) -> float:
+        """Compute competitive density as earning miners / max UID slots.
 
         Metric:
             name: Competitive Density
-            status: NEEDS_VALIDATION
+            status: PROVEN
             hypothesis: |
-                More miners competing for the same emission pool = harder to earn.
-                This ratio captures "miners per unit of emission" in a normalized way.
+                Occupancy rate: what fraction of available slots have earning miners.
+                High density = crowded, hard to stand out. Low = room to enter.
             formula: |
-                miners = [n for n if n.incentive > 0 or not n.is_validator]
-                earning_miners = count(m for m in miners if m.emission > 0)
-                total_emission = sum(m.emission)
-                density = earning_miners / (earning_miners + total_emission)
-            usefulness_mining: High density = crowded, hard to stand out. Low density = less competition.
-            usefulness_staking: Indirectly useful — high competition may indicate a healthy subnet
-            usefulness_risk: Used as penalty factor in attractiveness score (weight 0.15)
-            output_range: "[0.0, 1.0] — higher = more competition"
-            known_issues: |
-                - Mixes units (count + alpha/day) — normalization hack, not principled
-                - Consider replacing with occupancy rate or emission_per_miner in future
-            assumptions: |
-                - Is this formula meaningful or should we use a simpler alternative?
-                - Does this correlate with actual difficulty of earning on a subnet?
-
-        A simple measure of how crowded the mining field is. Higher values
-        indicate more competition for the same emission pool.
-
-        Args:
-            neurons: All neurons in the subnet.
-
-        Returns:
-            Float in [0.0, 1.0] representing competitive density.
+                earning_miners = count(miners where emission > 0)
+                density = earning_miners / max_uids
+            output_range: "[0.0, 1.0] — higher = more competitive"
         """
         miners = [n for n in neurons if n.incentive > 0 or not n.is_validator]
-
-        if not miners:
+        if not miners or max_uids <= 0:
             return 0.0
 
-        # DECISION: DENSITY-001
-        # Choice: Count earning miners (emission > 0) instead of active miners
-        # Alternatives rejected: sum(m.active) — active means "set weights recently", not "earning"
-        # Rationale: A miner with emission > 0 is competing for rewards regardless of active status.
-        #   Live data shows miners earning with active=False (haven't set weights but still receive emission).
-        # Revisit when: We find a better density formula (current one mixes units)
-        # Evidence: SN95 has 1 earning miner with active=False, density was incorrectly 0.0
         earning_miners = sum(1 for m in miners if m.emission > 0)
-        total_emission = sum(m.emission for m in miners)
-
-        if total_emission <= 0:
-            return 0.0
-
-        # Ratio of earning miners to total emission, capped at 1.0
-        # Normalized: more miners competing for same emission = higher density
-        density = earning_miners / (earning_miners + total_emission)
-        return max(0.0, min(1.0, density))
+        return earning_miners / max_uids
 
     # =========================================================================
     # Emission Trend (day-over-day)

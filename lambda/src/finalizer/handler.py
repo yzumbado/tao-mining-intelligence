@@ -314,7 +314,7 @@ def _generate_staking_rankings(all_metrics: dict[int, dict]) -> list[dict]:
         validators = vl.get("active_validators", 0)
         net_yield = _safe_float(vl.get("net_tao_yield_per_validator_per_day", 0.0))
 
-        if validators == 0 or alpha_price <= 0 or total_stake <= 0:
+        if validators == 0 or alpha_price <= 0 or total_stake <= 0 or pool_tao <= 0:
             continue
 
         # Total daily validator emission in TAO (after take rate)

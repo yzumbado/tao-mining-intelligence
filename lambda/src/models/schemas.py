@@ -348,7 +348,7 @@ class TaoflowHealth(BaseModel):
 class ChurnMetrics(BaseModel):
     """Miner churn and competition dynamics for a subnet."""
 
-    daily_churn_rate: float = Field(ge=0.0, le=1.0)
+    daily_churn_rate: float = Field(ge=0.0)
     new_registrations: int = Field(ge=0)
     deregistrations: int = Field(ge=0)
     average_miner_lifespan_blocks: float = Field(ge=0.0)

@@ -121,7 +121,7 @@ def handle(event: dict, context: Any) -> dict:
         metrics_computed.append("deregistration_risk")
 
         # Competitive density
-        competitive_density = MetricsEngine.compute_competitive_density(neurons)
+        competitive_density = MetricsEngine.compute_competitive_density(neurons, max_uids)
         metrics_computed.append("competitive_density")
 
         # Reward distribution model
@@ -173,6 +173,7 @@ def handle(event: dict, context: Any) -> dict:
 
         # Accumulate daily stake total for Net TAO Flow (one write per subnet per day)
         _store_daily_stake(netuid, date, total_val_stake)
+        _store_daily_emission(netuid, date, total_val_emission)
 
         # Self-mining risk detection
         self_mining_risk = MetricsEngine.compute_self_mining_risk(neurons)
@@ -313,6 +314,14 @@ def _store_daily_stake(netuid: int, date: str, total_stake: float) -> None:
         _state_manager.store_daily_stake(netuid, date, total_stake)
     except Exception as e:
         logger.warning(f"Failed to store daily stake for SN{netuid}: {e}")
+
+
+def _store_daily_emission(netuid: int, date: str, total_emission: float) -> None:
+    """Store daily emission total for taoflow_health computation."""
+    try:
+        _state_manager.store_daily_emission(netuid, date, total_emission)
+    except Exception as e:
+        logger.warning(f"Failed to store daily emission for SN{netuid}: {e}")
 
 
 

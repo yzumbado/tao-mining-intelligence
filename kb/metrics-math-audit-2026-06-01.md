@@ -185,3 +185,20 @@ Batch these. Lower risk.
 4. **Research the domain's existing tools first** — taostats, taoyield, and the chain itself all publish their formulas openly. We could have copied their exact formula from day 1.
 
 5. **"Overstated by 1.6x" diagnosis was wrong** — the real error was "understated by 25x" for non-root subnets. The 1.6x observation on SN0 was coincidentally accurate because alpha_price=1.0.
+
+---
+
+## Deferred Fixes
+
+### Fix #4: Entry slippage models wrong direction
+**Status**: DEFERRED
+**Reason**: POC revealed a deeper issue — `alpha_price` from `get_subnet_price` (0.044) ≠ AMM pool spot price (`pool_tao/pool_alpha` = 0.024). The 1.83x discrepancy means fixing buy/sell direction alone still produces wrong slippage. Need full redesign of `_estimate_slippage` to use pool-derived spot price.
+**Prerequisite**: Understand why API price differs from pool ratio (likely includes the moving price EMA or a different formula).
+**When to fix**: When building staking recommendations (Stage 3).
+**Data needed**: Already have `pool_tao_liquidity` and `pool_alpha_liquidity`.
+
+### Fix #6: taoflow_health always HEALTHY
+**Status**: DEFERRED — data accumulating since 2026-06-01
+**Reason**: `compute_taoflow_health(stake_history, emission_history)` needs both stake AND emission daily history. We have 7 days of stake but 0 days of emission. Started collecting `EMISSION_HISTORY#{netuid}` on 2026-06-01.
+**When to fix**: After 2026-06-08 (7 days of emission data accumulated).
+**Action**: Wire stake + emission history from DynamoDB into the Processor's `compute_taoflow_health` call (currently passes `[], []`).

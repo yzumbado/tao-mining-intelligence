@@ -600,6 +600,15 @@ class StateManager:
             "netuid": netuid,
         }))
 
+    def store_daily_emission(self, netuid: int, date: str, total_emission: float) -> None:
+        """Store daily emission total for taoflow_health computation."""
+        self._table.put_item(Item=_float_to_decimal({
+            "PK": f"EMISSION_HISTORY#{netuid}",
+            "SK": date,
+            "total_emission": total_emission,
+            "netuid": netuid,
+        }))
+
     def get_stake_history(self, netuid: int, days: int = 8) -> list[dict]:
         """Get recent daily stake totals for a subnet (sorted ascending by date)."""
         from boto3.dynamodb.conditions import Key as DDBKey
