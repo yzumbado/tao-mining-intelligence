@@ -1185,7 +1185,6 @@ class MetricsEngine:
     def compute_real_apy(
         total_validator_emission_daily: float,
         total_validator_stake: float,
-        validator_take_rate: float = 0.18,
     ) -> float:
         """Compute real annualized alpha yield from actual daily emission data.
 
@@ -1193,31 +1192,30 @@ class MetricsEngine:
             name: Alpha APY (1D)
             status: PROVEN
             hypothesis: |
-                Matches TaoYield methodology. Both emission and stake are in alpha
-                tokens — no price conversion needed. The result is how fast your
-                alpha balance grows (alpha yield), NOT TAO yield. Subnets with
-                insufficient stake (< 100 alpha) are excluded — matching TaoYield's
-                has_enough_stake filter that prevents noise from low-stake epochs.
+                Matches bittensor.ai "staker APY" methodology. The emission field
+                (mg.E × tempos_per_day) already reflects what validators receive
+                after owner cut and emission allocation. Dividing by alpha_stake
+                gives the per-unit yield rate. No take rate subtraction — that's
+                a per-validator split between the validator and their nominators,
+                not a subnet-level deduction.
             formula: |
                 IF total_validator_stake < 100: return 0.0 (insufficient data)
-                daily_yield_rate = (emission_daily × (1 - take_rate)) / alpha_stake
+                daily_yield_rate = emission_daily / alpha_stake
                 apy = ((1 + daily_yield_rate)^365 - 1) × 100
-            output_range: "[0.0, ∞) percent — typically 10% to 100% for active subnets"
+            output_range: "[0.0, ~10000%) — typically 100% to 2000% for active subnets"
             known_issues: |
                 - Extrapolates one day to a year (volatile day = misleading APY)
-                - Uses flat 18% take rate (real is per-validator, 10-18%)
                 - Alpha APY ≠ TAO APY (alpha price fluctuates)
+                - Does not subtract per-validator commission (reports gross pool APY)
         """
         # Guard: skip when stake is too low to produce meaningful APY
-        # (matches TaoYield's has_enough_stake filter)
         if total_validator_stake < 100.0 or total_validator_emission_daily <= 0:
             return 0.0
         # Both emission and stake are in alpha — rate is dimensionless
-        daily_yield_rate = (total_validator_emission_daily * (1.0 - validator_take_rate)) / total_validator_stake
-        # Guard: if daily yield rate > 100% it means emission > stake,
-        # which indicates a newly created subnet or data anomaly.
-        # TaoYield skips such epochs entirely. We return 0.
-        if daily_yield_rate > 1.0:
+        # No take rate: emission already reflects what validators receive
+        daily_yield_rate = total_validator_emission_daily / total_validator_stake
+        # Guard: extreme rates (>200% daily) indicate data anomaly
+        if daily_yield_rate > 2.0:
             return 0.0
         # Compound annualization: APY = (1 + daily_rate)^365 - 1
         return ((1.0 + daily_yield_rate) ** 365 - 1) * 100.0
