@@ -33,27 +33,26 @@ class TestRealAPYProperties:
     @given(
         total_emission=st.floats(min_value=0.0, max_value=10000.0,
                                  allow_nan=False, allow_infinity=False),
-        total_stake=st.floats(min_value=0.01, max_value=1e9,
-                              allow_nan=False, allow_infinity=False),
-        alpha_price=st.floats(min_value=0.0001, max_value=10.0,
+        total_stake=st.floats(min_value=100.0, max_value=1e9,
                               allow_nan=False, allow_infinity=False),
     )
     @settings(max_examples=200)
-    def test_apy_always_finite_and_non_negative(self, total_emission, total_stake, alpha_price):
+    def test_apy_always_finite_and_non_negative(self, total_emission, total_stake):
         """APY must be finite and >= 0 when inputs are valid."""
-        result = MetricsEngine.compute_real_apy(total_emission, total_stake, alpha_price)
+        result = MetricsEngine.compute_real_apy(total_emission, total_stake)
         assert result >= 0.0
         assert result != float("inf")
 
     def test_zero_emission_gives_zero_apy(self):
-        assert MetricsEngine.compute_real_apy(0.0, 1000.0, 0.5) == 0.0
+        assert MetricsEngine.compute_real_apy(0.0, 1000.0) == 0.0
 
-    def test_zero_stake_gives_zero_apy(self):
-        assert MetricsEngine.compute_real_apy(100.0, 0.0, 0.5) == 0.0
+    def test_low_stake_gives_zero_apy(self):
+        """Stake below 100 alpha returns 0 (insufficient data guard)."""
+        assert MetricsEngine.compute_real_apy(100.0, 50.0) == 0.0
 
     def test_higher_emission_higher_apy(self):
-        low = MetricsEngine.compute_real_apy(10.0, 1000.0, 1.0)
-        high = MetricsEngine.compute_real_apy(20.0, 1000.0, 1.0)
+        low = MetricsEngine.compute_real_apy(10.0, 1000.0)
+        high = MetricsEngine.compute_real_apy(20.0, 1000.0)
         assert high > low
 
 

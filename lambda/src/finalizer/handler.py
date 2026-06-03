@@ -226,6 +226,7 @@ def _generate_rankings(all_metrics: dict[int, dict],
             "attractiveness_score": score,
             "self_mining_risk": sm_risk,
             "real_apy_percent": _safe_float(data.get("real_apy_percent", 0.0)),
+            "concentration_risk": data.get("concentration_risk", {}),
         })
 
     # Sort by attractiveness score descending

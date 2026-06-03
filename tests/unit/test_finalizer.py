@@ -98,6 +98,12 @@ def _make_derived_metrics(netuid: int, date: str, *,
                 "unique_coldkeys": 2 if self_mining_risk > 0.3 else 15,
             },
             "real_apy_percent": real_apy_percent,
+            "concentration_risk": {
+                "risk": 0.0,
+                "tier": "healthy",
+                "active_validators": 10,
+                "top_1_stake_share": 0.15,
+            },
         },
     }
 
@@ -540,7 +546,7 @@ class TestRankingSorting:
         required_fields = {"netuid", "net_tao_yield", "days_to_recoup",
                            "competitive_density", "emission_trend",
                            "attractiveness_score", "self_mining_risk",
-                           "real_apy_percent"}
+                           "real_apy_percent", "concentration_risk"}
         for entry in rankings:
             assert required_fields.issubset(entry.keys())
 
