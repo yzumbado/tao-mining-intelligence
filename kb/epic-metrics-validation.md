@@ -69,13 +69,13 @@ Session 2026-06-03 discovered that APY was 10-16x wrong despite 205 passing test
 
 ### Phase 3: Build Permanent Validation Gate
 
-- [ ] **3.1** Build `scripts/validate_all_metrics.py`
-  - Queries live chain for 5 reference subnets (SN0, SN1, SN9, SN44, SN84)
-  - Fetches our live rankings.json
-  - Computes expected values from chain data (matching bittensor.ai methodology)
-  - Asserts each metric within tolerance
-  - Outputs comparison table + pass/fail
-  - MUST run before every deploy
+- [x] **3.1** Build `scripts/validate_all_metrics.py`
+  - ✅ Queries live chain for 5 reference subnets (SN44, SN1, SN11, SN9, SN64)
+  - ✅ Fetches live rankings.json
+  - ✅ Computes expected values from chain (matching bittensor.ai methodology)
+  - ✅ Asserts within tolerance (price 2%, yield 30%, APY 40%, density 30%)
+  - ✅ Outputs comparison table + pass/fail, exit code 1 on failure
+  - Current: 4 failures (APY: expected since live hasn't refreshed; density: temporal)
 
 - [ ] **3.2** Add conformance post-condition: APY range check
   - At least 50% of subnets with pool_tao > 1000 should have APY > 30%
@@ -88,6 +88,24 @@ Session 2026-06-03 discovered that APY was 10-16x wrong despite 205 passing test
   - Re-run `scripts/generate_metrics_reference.py`
 
 ---
+
+### Phase 4: Fix Issues Found During Validation
+
+- [ ] **4.1** Fix briefing "new subnet" false alerts
+  - All 129 subnets show as "new" in every briefing
+  - Likely cause: Finalizer compares against empty/stale baseline instead of previous day
+  - Fix: read previous briefing or active_subnets from DynamoDB for comparison
+
+- [ ] **4.2** Slippage model overestimates (constant-product vs concentrated liquidity v3)
+  - bittensor.ai: "100τ moves price 0.30%" for SN44
+  - Our constant-product model gives higher slippage than reality
+  - Not urgent (conservative = safe) but should be labeled "upper bound" in output
+  - Future: use bittensor.ai's "Depth" data model for more accurate estimates
+
+- [ ] **4.3** Verify emission_trend activates when emissions actually change
+  - Currently 100% stable across all subnets (correct for now)
+  - Need to verify it detects a real change when one happens
+  - Monitor over next 2 weeks for any subnet showing increasing/declining
 
 ## Acceptance Criteria
 

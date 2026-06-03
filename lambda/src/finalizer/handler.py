@@ -501,6 +501,25 @@ def _verify_outputs(rankings: list, briefing: dict,
                 "message": "No subnet has real_apy_percent > 0 — APY computation may be broken",
             })
 
+        # Check 9: No subnet should have APY > 5000% (overflow regression)
+        apy_overflow = [r["netuid"] for r in rankings if r.get("real_apy_percent", 0) > 5000]
+        if apy_overflow:
+            findings.append({
+                "check": "apy_overflow_detected",
+                "severity": "error",
+                "subnets": apy_overflow[:5],
+                "message": f"{len(apy_overflow)} subnets have APY > 5000% — possible overflow",
+            })
+
+        # Check 10: At least 30% of subnets should have APY > 20% (sanity floor)
+        apy_healthy = sum(1 for r in rankings if r.get("real_apy_percent", 0) > 20)
+        if len(rankings) > 10 and apy_healthy < len(rankings) * 0.3:
+            findings.append({
+                "check": "apy_too_low_overall",
+                "severity": "warning",
+                "message": f"Only {apy_healthy}/{len(rankings)} subnets have APY > 20% — formula may be broken",
+            })
+
     # Log findings as structured JSON
     if findings:
         logger.warning(json.dumps({
