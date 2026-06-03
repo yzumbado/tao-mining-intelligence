@@ -1418,8 +1418,10 @@ class MetricsEngine:
         earning_miners = [m for m in miners if m.emission > 0]
         validators = [n for n in neurons if n.is_validator]
 
-        # Signal 1: Single or no earning miner (weight 0.35)
-        if len(earning_miners) <= 1:
+        # Signal 1: Single or no earning miner AND few validators (weight 0.35)
+        # Many legitimate WTA subnets have only 1 earning miner by design.
+        # Self-mining indicator: few earners AND few validators (< 3).
+        if len(earning_miners) <= 1 and len(validators) <= 2:
             risk += 0.35
             signals.append("single_or_no_earning_miner")
 

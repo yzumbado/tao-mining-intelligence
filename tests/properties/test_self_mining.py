@@ -142,8 +142,9 @@ class TestSelfMiningRiskProperties:
                 stake=50000.0, alpha_stake=50000.0,
             ))
         result = MetricsEngine.compute_self_mining_risk(neurons)
-        # Should flag single miner but not validator concentration or coldkey overlap
-        assert "single_or_no_earning_miner" in result["signals"]
+        # Single miner with multiple validators = WTA subnet, NOT self-mining
+        # Signal 1 only fires when validators <= 2 (indicating no real competition)
+        assert "single_or_no_earning_miner" not in result["signals"]
         assert "single_validator" not in result["signals"]
         assert "coldkey_overlap" not in result["signals"]
 
