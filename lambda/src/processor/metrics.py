@@ -1184,7 +1184,8 @@ class MetricsEngine:
     @staticmethod
     def compute_real_apy(
         total_validator_emission_daily: float,
-        total_validator_stake: float,
+        pool_tao_liquidity: float,
+        alpha_price: float,
     ) -> float:
         """Compute real annualized alpha yield from actual daily emission data.
 
@@ -1192,28 +1193,29 @@ class MetricsEngine:
             name: Alpha APY (1D)
             status: PROVEN
             hypothesis: |
-                Matches bittensor.ai "staker APY" methodology. The emission field
-                (mg.E × tempos_per_day) already reflects what validators receive
-                after owner cut and emission allocation. Dividing by alpha_stake
-                gives the per-unit yield rate. No take rate subtraction — that's
-                a per-validator split between the validator and their nominators,
-                not a subnet-level deduction.
+                Matches bittensor.ai per-staker simulation. When you stake TAO,
+                it enters the pool and you receive alpha. Your share of validator
+                dividends is proportional to your alpha vs the pool's total alpha.
+                The pool alpha (pool_tao / alpha_price) is the correct denominator —
+                NOT sum(mg.AS) which includes consensus-locked alpha beyond the pool.
             formula: |
-                IF total_validator_stake < 100: return 0.0 (insufficient data)
-                daily_yield_rate = emission_daily / alpha_stake
+                pool_alpha = pool_tao_liquidity / alpha_price
+                daily_yield_rate = emission_daily / pool_alpha
                 apy = ((1 + daily_yield_rate)^365 - 1) × 100
-            output_range: "[0.0, ~10000%) — typically 100% to 2000% for active subnets"
+            output_range: "[0.0, ~2000%) — typically 50% to 500% for active subnets"
             known_issues: |
                 - Extrapolates one day to a year (volatile day = misleading APY)
                 - Alpha APY ≠ TAO APY (alpha price fluctuates)
                 - Does not subtract per-validator commission (reports gross pool APY)
+                - bittensor.ai headline 'staker APY' includes price appreciation (higher than this)
         """
-        # Guard: skip when stake is too low to produce meaningful APY
-        if total_validator_stake < 100.0 or total_validator_emission_daily <= 0:
+        if pool_tao_liquidity <= 0 or alpha_price <= 0 or total_validator_emission_daily <= 0:
             return 0.0
-        # Both emission and stake are in alpha — rate is dimensionless
-        # No take rate: emission already reflects what validators receive
-        daily_yield_rate = total_validator_emission_daily / total_validator_stake
+        # Pool alpha = how much alpha exists in the staking pool
+        pool_alpha = pool_tao_liquidity / alpha_price
+        if pool_alpha < 100.0:
+            return 0.0
+        daily_yield_rate = total_validator_emission_daily / pool_alpha
         # Guard: extreme rates (>200% daily) indicate data anomaly
         if daily_yield_rate > 2.0:
             return 0.0

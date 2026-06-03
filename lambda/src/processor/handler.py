@@ -161,9 +161,9 @@ def handle(event: dict, context: Any) -> dict:
         # Real 1D APY (from actual emission data)
         validators = [n for n in neurons if n.dividends > 0]
         total_val_emission = sum(v.emission for v in validators)
-        total_val_stake = sum(v.alpha_stake for v in validators)
+        total_val_stake = sum(v.alpha_stake for v in validators)  # for Net TAO Flow tracking
         real_apy = MetricsEngine.compute_real_apy(
-            total_val_emission, total_val_stake)
+            total_val_emission, pool_tao, alpha_price)
         metrics_computed.append("real_apy")
 
         # Validator concentration risk (standalone metric for staking decisions)

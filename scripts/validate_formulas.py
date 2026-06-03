@@ -71,14 +71,14 @@ def our_apy(data: dict, take_rate: float = 0.18) -> float:
     """Compute APY using OUR formula (must match taostats within tolerance).
 
     Correct formula (alpha-denominated, simple annualization):
-        APY = (emission_daily / alpha_stake) × (1 - take) × 365 × 100
+        APY = (emission_daily / pool_alpha) × 365 (compound)
     """
     from src.processor.metrics import MetricsEngine
 
     return MetricsEngine.compute_real_apy(
         total_validator_emission_daily=data["total_val_emission_daily"],
-        total_validator_stake=data["total_alpha_stake"],
-        alpha_tao_price=data["alpha_price"],
+        pool_tao_liquidity=data.get("pool_tao", 0.0),
+        alpha_price=data["alpha_price"],
     )
 
 
