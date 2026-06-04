@@ -35,14 +35,13 @@ An autonomous pipeline that continuously collects Bittensor subnet data, compute
 
 ## How to Orient Yourself
 
-1. **Start here**: `.kiro/specs/tao-mining-intelligence-pipeline/tasks.md` — master index showing phase status
-2. **Phase task files**: `tasks-phase1-validation.md` through `tasks-phase5-site.md` — granular task tracking per phase (checkboxes: `[x]` done, `[ ]` not started, `[~]` blocked)
-3. **Current phase**: All phases complete. See `tasks.md` for status summary.
-4. **Architecture**: `design.md` in the same spec directory — full system design with algorithms
-5. **Requirements**: `requirements.md` — 43 requirements covering all functionality
-6. **Coding standards**: `.kiro/steering/coding-standards.md` — ALWAYS follow these
-7. **Knowledge base**: `kb/` directory — research findings, architecture decisions, infrastructure assessment
-8. **Validated SDK behavior**: `kb/bittensor-mining-research.md` — section "Validated Through Implementation"
+1. **Start here**: This file (handoff.md) — project context, pending tasks, session history
+2. **Architecture**: `.kiro/specs/tao-mining-intelligence-pipeline/design.md` — 425-line system design (rewritten 2026-06-03)
+3. **Requirements**: `.kiro/specs/tao-mining-intelligence-pipeline/requirements.md` — 19 requirements (rewritten 2026-06-03)
+4. **Coding standards**: `.kiro/steering/coding-standards.md` — ALWAYS follow these
+5. **Current work**: `kb/epic-metrics-validation.md` — active epic with pending tasks
+6. **Knowledge base**: `kb/` directory — research findings, architecture decisions, validation audits
+7. **Validated SDK behavior**: SDK Gotchas section below + `kb/bittensor-mining-research.md`
 
 ## Pipeline Data Flow
 
@@ -205,18 +204,11 @@ lambda/src/
 - Briefing shows all 129 subnets as "new" on each run (stale baseline comparison — see epic Phase 4.1)
 - bittensor.ai's headline "staker APY" (496%) includes alpha price appreciation; ours reports pure dividend yield (~82%) — intentionally different metric
 
-### In Progress: Continuous Conformance System
-- **Design principle**: Human-agent collaboration — agents do continuous verification, humans triage and decide
-- **Concept validated**: 3 proofs completed, all produced actionable findings
-- **Build plan ready**: `kb/conformance-build-plan.md`
-- **Next action**: Phase A — inline post-conditions in Finalizer (30 lines, zero new infra)
-- **Key docs**:
-  - `kb/design-principle-agent-native-conformance.md` — philosophy + collaboration model
-  - `kb/conformance-concept-index.md` — 10 areas, 5 proofs, 7 design rules
-  - `kb/conformance-findings-schema.md` — finding data model (18 required fields, validated)
-  - `kb/conformance-proof2-commit-history.md` — git analysis patterns
-  - `kb/conformance-proof3-test-vs-production.md` — value range comparison
-  - `kb/conformance-build-plan.md` — Phase A-E implementation plan
+### Conformance System: DEPLOYED (Phase A+B)
+- Inline post-conditions run in Finalizer on every invocation (10 checks)
+- Checks: rankings count, NaN/Inf, sort order, briefing date, source_block, score spread, self-mining, APY range (overflow + floor)
+- Logs structured findings to CloudWatch (never blocks pipeline)
+- Phase C-E (cross-day drift, automated remediation) remain as backlog
 
 ### Session 2026-06-01 Findings (context for next agent):
 
@@ -242,10 +234,10 @@ lambda/src/
 #### Pending Tasks (next session):
 
 **Documentation (P1 — 1-2 hours):**
-- [ ] Rewrite `design.md` — still describes old batch orchestration (SNS, completion tracker, monolithic Collector). Current architecture is fundamentally different (AD18 self-scheduling).
-- [ ] Rewrite `requirements.md` — describes old batch model ("triggers at daily time", "complete cycle within 15 min"). No longer accurate.
-- [ ] Full `handoff.md` refresh — update test count (205), remove deleted directories from code structure, update architecture state.
-- [ ] Regenerate `kb/metrics-reference.md` — run `python scripts/generate_metrics_reference.py`. Missing 4 new metrics.
+- [x] Rewrite `design.md` — DONE 2026-06-03 (2091 → 425 lines)
+- [x] Rewrite `requirements.md` — DONE 2026-06-03 (43 → 19 requirements)
+- [x] Full `handoff.md` refresh — DONE 2026-06-03
+- [x] Regenerate `kb/metrics-reference.md` — DONE 2026-06-03 (13 → 17 metrics)
 
 **Deferred Fixes (P2 — documented in kb/metrics-math-audit-2026-06-01.md):**
 - [ ] Fix #4: Entry slippage direction — needs redesign. API price (0.044) ≠ pool spot price (0.024). Use pool_tao/pool_alpha as spot.
