@@ -83,6 +83,9 @@ def handle(event: dict, context: Any) -> dict:
         # Generate briefing
         briefing = _generate_briefing(date, cycle_id, all_metrics, active_subnets)
 
+        # Store active subnets for next briefing's new-subnet detection
+        _state_manager.set_previous_active_subnets(active_subnets)
+
         # Store rankings to S3
         _storage.store_snapshot(
             _storage.get_date_path("derived/rankings", date),

@@ -558,6 +558,17 @@ class StateManager:
         except Exception:
             return []
 
+    def set_previous_active_subnets(self, netuids: list[int]) -> None:
+        """Store current active subnets for next briefing's new-subnet detection."""
+        try:
+            self._table.put_item(Item={
+                "PK": "CONFIG",
+                "SK": "PREVIOUS_ACTIVE_SUBNETS",
+                "netuids": netuids,
+            })
+        except Exception:
+            pass  # Non-critical — next briefing will just show all as new again
+
     def scan_basic_profiles(self) -> dict[int, dict]:
         """Scan all PROFILE#basic items. Returns {netuid: profile_dict}."""
         profiles: dict[int, dict] = {}
