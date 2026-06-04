@@ -20,6 +20,14 @@ When building a new feature or fixing a bug, follow this order:
 
 **Key rule**: Steps 1 and 5 are what catch value bugs. Tests (step 4) catch structural bugs. Both are mandatory.
 
+**Deploy prerequisites** (will fail without these):
+- Colima running: `colima start`
+- AWS profile `tao` in `~/.aws/credentials` (account 651484323929)
+- Python 3.12 venv active: `source .venv/bin/activate`
+- Node.js/npx available for CDK
+
+**Formula deploys use `--skip-validation`**: When deploying a formula fix, the validation gate (which compares live output vs chain) will always fail pre-deploy because the live output IS the bug. Use `./scripts/deploy.sh --skip-validation` and verify manually post-deploy.
+
 ## General Principles
 
 - Python 3.12, type hints on all function signatures

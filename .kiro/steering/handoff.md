@@ -214,50 +214,44 @@ lambda/src/
 
 
 
-### Session 2026-06-03 Findings (context for next agent):
+### Session 2026-06-04 Findings (context for next agent):
 
 #### Major Accomplishments:
-- **APY formula rewritten AGAIN** — was 10-16x too low (wrong denominator: mg.AS vs pool_alpha). POC against live chain confirmed pool_tao/alpha_price is the correct denominator. Now matches bittensor.ai per-staker simulation within ±10%.
-- **APY overflow eliminated** — 21 subnets had APY >1000% (SN122 at 128 BILLION %). Root cause: near-zero stake + compound exponentiation. Fixed with stake guard (<100) and rate guard (>2.0).
-- **Self-mining false positives fixed** — was 76/129 (59%) flagged. Root cause: Signal 1 fired on all WTA subnets (1 earning miner). Fixed: now requires validators ≤ 2 to fire.
-- **607 lines of dead duplicate code removed** from metrics.py
-- **design.md rewritten** — old 2091 lines (batch model) → 425 lines (actual AD18 architecture)
-- **requirements.md rewritten** — old 43 requirements (600 lines, batch model) → 19 requirements (237 lines, actual system)
-- **docs/architecture/ deleted** — was a stale duplicate of .kiro/specs/design.md
-- **Permanent validation gate created** — `scripts/validate_all_metrics.py` queries live chain, compares 5 subnets, exits 1 on failure. MUST pass before every deploy.
-- **Conformance checks 9-10 added** — APY overflow (>5000%) and APY floor (>20% for 30%+ subnets)
-- **Metrics validation epic created** — `kb/epic-metrics-validation.md` (Phase 1-3 complete, Phase 4 backlog)
+- **Deployed all pending fixes to production** — APY formula, overflow guard, self-mining false positive fix, concentration_risk field. Stack UPDATE_COMPLETE at 17:15 UTC.
+- **Validation pipeline overhauled** — Hard deploy gate (blocks on failure), independent RPC spot check, deviation history with drift detection.
+- **Deploy script made end-to-end reliable** — Fixed 4 blockers: cdk.json path, python binary, AWS profile, Docker daemon.
+- **Test hygiene fixed** — Removed dual module loading (13 files migrated), killed standalone function divergence risk.
+- **Redundant scripts archived** — 6 validate scripts → 2 active (gate + spot check) + 4 archived.
+- **Validation runbook created** — kb/runbook-validation-deploy.md with prerequisites, failure investigation, convergence monitoring.
 
-#### Cross-Validation Results (live chain, 5 subnets):
-- alpha_price: ✅ <0.6% deviation
-- net_tao_yield: ✅ <0.6% deviation
-- real_apy_percent: ✅ within ±10% (new formula)
-- competitive_density: ✅ correct formula
-- self_mining_risk: ✅ true positives confirmed, false positive fixed
+#### Lessons Learned (apply to future work):
+1. **Deploy script must be self-sufficient** — Don't assume Python, Docker, or AWS credentials are "just there". Check prerequisites or fail with clear messages.
+2. **Formula deploys need --skip-validation** — The validation gate compares live output vs chain. If the formula is the bug, the gate will always fail pre-deploy. This is expected, not broken.
+3. **Post-deploy convergence is NOT instant** — Subnets refresh on independent tempo schedules (20-240 min). Full convergence takes ~4 hours. Check metadata.json timestamps.
+4. **Colima must be running for CDK deploys** — Lambda uses container images. No Docker = no deploy. Add to prerequisites check.
+5. **Test-only code paths WILL diverge from production** — The standalone deregistration function masked a return-ordering difference for months. Always test the real code path.
+6. **Raw RPC is a better independent check than third-party APIs** — bittensor.ai is Cloudflare-protected. Substrate RPC is public, fast (2s), and gives ground truth through an independent code path.
 
-#### Key Patterns Discovered:
-1. **"mg.AS ≠ pool alpha"** — mg.AS includes consensus-locked alpha beyond the staking pool. pool_tao/alpha_price is the correct denominator for per-staker yield.
-2. **"Same name, different metric"** — bittensor.ai's "496% staker APY" includes price appreciation. Their per-staker simulation ("Stake 1000τ → 40.70α/day") gives 82% pure yield. Always compare against the SIMULATION, not the headline.
-3. **"Property tests can't catch value bugs"** — 205 tests passed while APY was 10x wrong. Only cross-provider validation catches these.
-4. **"59% false positive = broken heuristic"** — The self-mining signal was too aggressive for WTA subnets. Gate on validator count fixed it.
-5. **"POC first, always"** — The live chain POC (5 min to write) immediately revealed the mg.AS issue that would have taken hours to figure out from code alone.
+#### Deploy Prerequisites (document in all runbooks):
+- Colima running (`colima start`)
+- AWS profile `tao` configured (account 651484323929, us-east-1)
+- Python 3.12 venv active
+- Node.js/npx available for CDK
 
 #### Pending Tasks (next session):
 
-**Deployment (P0 — deploy code to Lambda):**
-- [ ] Deploy current code to Lambda (APY fix, self-mining fix, concentration_risk in output)
-- [ ] Run `scripts/validate_all_metrics.py` after pipeline refreshes — should show 0 failures
-- [ ] Verify production APY: SN44 should be ~80-100%, not 36%
+**P1 — Verify Post-Deploy (check after 4 hours):**
+- [ ] Run `python scripts/validate_all_metrics.py` — should pass (all subnets refreshed)
+- [ ] Verify SN44 APY ~80-100% (not 37%)
+- [ ] Verify APY overflow subnets = 0 (was 10)
+- [ ] Verify self-mining risk > 0 count dropped from 110 to ~20-30
 
-**Epic Phase 4 (P2 — findings from validation):**
-- [ ] Fix briefing "new subnet" false alerts (129/129 show as new every run)
+**P2 — Fix Briefing False Positives:**
+- [ ] Fix 129/129 "new subnet" alerts every run (Phase 4.1 of metrics validation epic)
+
+**P3 — Backlog:**
 - [ ] Label slippage as "upper bound (constant-product model)"
-- [ ] Monitor emission_trend for first real non-stable event
-
-**Backlog (P3):**
-- [ ] Phase 3 task 3.3: Update metrics-reference.md with "validated against" sources
-- [ ] taoflow_health activation (needs 7+ days emission history — check after 2026-06-08)
-- [ ] DeepCollector Lambda (per-UID chain data)
+- [ ] Update metrics-reference.md with "validated against" sources
 - [ ] Stage 2: RESEARCH (LLM-powered subnet researcher)
 
 > **Previous sessions**: See `kb/session-history.md` for 2026-06-01 and earlier findings.

@@ -117,3 +117,58 @@ Run this weekly or before a deploy if you suspect data quality issues.
 | Chain validation (hard gate) | Stale data, broken pipeline, metric divergence | SDK bugs that affect both our code AND the validation |
 | RPC spot check (soft) | SDK interpretation bugs, wrong field mapping | Anything not reflected in alpha_price |
 | Drift detection | Gradual degradation over time | Sudden one-time failures |
+
+---
+
+## Prerequisites (must be running before deploy)
+
+1. **Docker (Colima)**: `colima start` — CDK builds Lambda container images
+2. **AWS credentials**: Profile `tao` in `~/.aws/credentials` (account 651484323929, us-east-1)
+3. **Python venv**: `source .venv/bin/activate` (Python 3.12 required)
+4. **Node.js**: npx must be available (for CDK CLI)
+
+Verify prerequisites:
+```bash
+docker info >/dev/null 2>&1 && echo "Docker: OK" || echo "Docker: MISSING — run 'colima start'"
+aws sts get-caller-identity --profile tao >/dev/null 2>&1 && echo "AWS: OK" || echo "AWS: MISSING"
+.venv/bin/python --version 2>&1 | grep -q "3.12" && echo "Python: OK" || echo "Python: MISSING"
+which npx >/dev/null 2>&1 && echo "Node/npx: OK" || echo "Node: MISSING"
+```
+
+---
+
+## When to Use --skip-validation
+
+The `--skip-validation` flag is for TWO scenarios:
+
+1. **Chain endpoint down** — Finney RPC is unresponsive, you need to deploy urgently
+2. **Deploying a formula fix** — The validation compares live output against chain. If live output is wrong BECAUSE of the bug you're fixing, it will always fail pre-deploy. Use `--skip-validation` and verify post-deploy manually.
+
+After deploying with `--skip-validation`, manually verify within 30 minutes:
+```bash
+# Wait for at least one subnet to refresh with new code, then:
+python scripts/validate_all_metrics.py
+```
+
+---
+
+## Post-Deploy: How Long Until Data Converges
+
+Subnets refresh independently based on their tempo:
+- **Fast subnets** (tempo 12-60): refresh every 20-60 minutes
+- **Slow subnets** (tempo 360+): refresh every 2-4 hours
+- **Full convergence**: all 129 subnets refreshed within ~4 hours max
+
+To monitor convergence:
+```bash
+# Count how many subnets have refreshed since deploy
+curl -s https://dkfh19zkgqq18.cloudfront.net/data/metadata.json | python3 -c "
+import json, sys
+from datetime import datetime, timezone
+data = json.load(sys.stdin)
+deploy = datetime.fromisoformat('REPLACE_WITH_DEPLOY_TIME')
+refreshed = sum(1 for s in data['subnets'].values()
+                if datetime.fromisoformat(s['processed_at']) > deploy)
+print(f'{refreshed}/129 subnets refreshed post-deploy')
+"
+```
