@@ -13,7 +13,7 @@ from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
 
-from processor.metrics import MetricsEngine
+from src.processor.metrics import MetricsEngine
 
 
 class TestGiniCoefficientProperties:

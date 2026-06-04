@@ -2,7 +2,7 @@
 
 
 
-from validation import validate_metagraph, validate_registration_cost, validate_alpha_prices
+from src.validation import validate_metagraph, validate_registration_cost, validate_alpha_prices
 
 
 class TestValidateMetagraph:

@@ -14,7 +14,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 
-from models.schemas import (
+from src.models.schemas import (
     MetadataHeader,
     Neuron,
     DeregistrationRisk,
@@ -25,7 +25,7 @@ from models.schemas import (
     SubnetRanking,
     EmissionTrend,
 )
-from models.enums import (
+from src.models.enums import (
     Confidence,
     CompetitionTrend,
     HoldVsSwap,

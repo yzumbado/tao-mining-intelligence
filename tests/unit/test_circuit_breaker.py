@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 
-from circuit_breaker import CircuitBreaker, with_timeout, get_boto_config
+from src.circuit_breaker import CircuitBreaker, with_timeout, get_boto_config
 
 
 class TestCircuitBreaker:

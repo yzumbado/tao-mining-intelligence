@@ -13,8 +13,8 @@ from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
 
-from processor.metrics import MetricsEngine
-from models.schemas import Neuron
+from src.processor.metrics import MetricsEngine
+from src.models.schemas import Neuron
 
 
 def make_neuron(uid: int, stake: float, emission: float, dividends: float) -> Neuron:

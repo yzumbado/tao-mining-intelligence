@@ -6,7 +6,7 @@ import logging
 import pytest
 
 
-from instrumentation import (
+from src.instrumentation import (
     init_tracing,
     set_trace_id,
     get_trace_id,

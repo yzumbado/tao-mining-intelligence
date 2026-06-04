@@ -13,8 +13,8 @@ from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
 
-from processor.metrics import MetricsEngine
-from models.enums import RewardModel
+from src.processor.metrics import MetricsEngine
+from src.models.enums import RewardModel
 
 
 class TestRewardModelProperties:

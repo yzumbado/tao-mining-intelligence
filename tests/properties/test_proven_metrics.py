@@ -10,8 +10,8 @@ Properties verified:
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
-from processor.metrics import MetricsEngine
-from models.schemas import Neuron
+from src.processor.metrics import MetricsEngine
+from src.models.schemas import Neuron
 
 
 def _make_neuron(uid: int, coldkey: str = "5Cold", hotkey: str = "5Hot",
