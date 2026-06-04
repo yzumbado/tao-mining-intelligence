@@ -1226,9 +1226,10 @@ class MetricsEngine:
         if pool_alpha < 100.0:
             return 0.0
         daily_yield_rate = total_validator_emission_daily / pool_alpha
-        # Guard: extreme rates (>200% daily) indicate data anomaly
-        if daily_yield_rate > 2.0:
-            return 0.0
+        # Guard: cap at 3% daily (compound above this is meaningless)
+        if daily_yield_rate > 0.03:
+            # Use simple annualization for extreme rates (avoids exponential blowup)
+            return min(daily_yield_rate * 365 * 100, 5000.0)
         # Compound annualization: APY = (1 + daily_rate)^365 - 1
         return ((1.0 + daily_yield_rate) ** 365 - 1) * 100.0
 
