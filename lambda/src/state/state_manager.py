@@ -569,6 +569,15 @@ class StateManager:
         except Exception:
             pass  # Non-critical — next briefing will just show all as new again
 
+    def get_research_profile(self, netuid: int) -> Optional[dict]:
+        """Get research profile for a subnet."""
+        try:
+            resp = self._table.get_item(
+                Key={"PK": f"SUBNET#{netuid}", "SK": "RESEARCH#latest"})
+            return resp.get("Item")
+        except Exception:
+            return None
+
     def store_research_profile(self, netuid: int, profile: dict) -> None:
         """Store subnet research profile at SUBNET#{netuid}|RESEARCH#latest."""
         from decimal import Decimal

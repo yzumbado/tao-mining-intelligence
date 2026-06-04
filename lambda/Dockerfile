@@ -11,6 +11,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY src/ ${LAMBDA_TASK_ROOT}/src/
 
+# Copy config files (subnet repo mappings)
+COPY config/ ${LAMBDA_TASK_ROOT}/config/
+
 # Copy Jinja2 templates for site generation
 COPY templates/ ${LAMBDA_TASK_ROOT}/templates/
 

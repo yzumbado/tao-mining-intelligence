@@ -75,12 +75,16 @@ def handle(event: dict, context: Any) -> dict:
         # Publish staleness metric to CloudWatch
         _publish_staleness_metric(len(stale))
 
+        # Check research staleness (Stage 2 — schedule researcher for stale subnets)
+        research_seeded = _check_research_staleness(netuids)
+
         # Publish system health metrics
         _publish_health_metrics(len(netuids), seeded, len(stale))
 
         ctx["new_subnets"] = len(new)
         ctx["stale_subnets"] = len(stale)
         ctx["seeded"] = seeded
+        ctx["research_seeded"] = research_seeded
 
         return {
             "status": "complete",
@@ -88,6 +92,7 @@ def handle(event: dict, context: Any) -> dict:
             "new_subnets": len(new),
             "stale_subnets": len(stale),
             "seeded": seeded,
+            "research_seeded": research_seeded,
         }
 
 
@@ -157,6 +162,73 @@ def _publish_health_metrics(total_subnets: int, seeded: int, stale: int) -> None
         )
     except Exception as e:
         logger.warning(f"Failed to publish health metrics: {e}")
+
+
+RESEARCH_MAX_STALENESS_DAYS = 7
+
+
+def _check_research_staleness(netuids: list[int]) -> int:
+    """Check research profiles and schedule researcher for stale subnets."""
+    researcher_arn = os.environ.get("RESEARCHER_ARN", "")
+    if not researcher_arn:
+        return 0  # Researcher not configured yet
+
+    seeded = 0
+    for netuid in netuids:
+        research = _state_manager.get_research_profile(netuid)
+        if research is None or _is_research_stale(research):
+            if _create_research_schedule(netuid, researcher_arn):
+                seeded += 1
+            if seeded >= 20:  # Cap per discovery run to avoid thundering herd
+                break
+    return seeded
+
+
+def _is_research_stale(research: dict) -> bool:
+    """Check if research profile is older than 7 days."""
+    last = research.get("last_researched")
+    if not last:
+        return True
+    try:
+        ts = datetime.fromisoformat(str(last))
+        age_days = (datetime.now(timezone.utc) - ts).total_seconds() / 86400
+        return age_days > RESEARCH_MAX_STALENESS_DAYS
+    except (ValueError, TypeError):
+        return True
+
+
+def _create_research_schedule(netuid: int, researcher_arn: str) -> bool:
+    """Create a one-time schedule to invoke the Researcher Lambda."""
+    try:
+        scheduler = boto3.client("scheduler", region_name=_config.region)
+        scheduler_role_arn = os.environ.get("SCHEDULER_ROLE_ARN", "")
+        if not scheduler_role_arn:
+            return False
+
+        from datetime import timedelta
+        # Stagger: random 0-300s delay to spread GitHub API load
+        delay = random.randint(60, 360)
+        run_time = datetime.now(timezone.utc) + timedelta(seconds=delay)
+
+        scheduler.create_schedule(
+            Name=f"tao-research-{netuid}",
+            GroupName="default",
+            ScheduleExpression=f"at({run_time.strftime('%Y-%m-%dT%H:%M:%S')})",
+            ScheduleExpressionTimezone="UTC",
+            FlexibleTimeWindow={"Mode": "OFF"},
+            Target={
+                "Arn": researcher_arn,
+                "RoleArn": scheduler_role_arn,
+                "Input": json.dumps({"netuid": netuid}),
+            },
+            ActionAfterCompletion="DELETE",
+        )
+        return True
+    except Exception as e:
+        if "Conflict" in str(e):
+            return False  # Already scheduled
+        logger.warning(f"Failed to schedule research for SN{netuid}: {e}")
+        return False
 
 
 def _create_schedule(netuid: int, delay_seconds: int = 0) -> bool:

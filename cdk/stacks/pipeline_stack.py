@@ -291,7 +291,8 @@ class TaoPipelineStack(Stack):
         table.grant_read_write_data(discovery_fn)
         discovery_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["scheduler:CreateSchedule", "scheduler:GetSchedule"],
-            resources=[f"arn:aws:scheduler:{self.region}:{self.account}:schedule/default/tao-subnet-*"],
+            resources=[f"arn:aws:scheduler:{self.region}:{self.account}:schedule/default/tao-subnet-*",
+                       f"arn:aws:scheduler:{self.region}:{self.account}:schedule/default/tao-research-*"],
         ))
         discovery_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["iam:PassRole"],
@@ -304,6 +305,45 @@ class TaoPipelineStack(Stack):
             schedule=events.Schedule.rate(Duration.hours(1)),
             targets=[targets.LambdaFunction(discovery_fn)],
         )
+
+        # =====================================================================
+        # Researcher Lambda (Stage 2 — subnet repo analysis)
+        # =====================================================================
+        researcher_fn = _lambda.DockerImageFunction(
+            self, "ResearcherLambda",
+            function_name="tao-researcher",
+            code=_lambda.DockerImageCode.from_image_asset(
+                directory=lambda_dir,
+                cmd=["src.researcher.handler.handle"],
+                platform=ecr_assets.Platform.LINUX_ARM64,
+            ),
+            architecture=_lambda.Architecture.ARM_64,
+            memory_size=256,
+            timeout=Duration.seconds(60),
+            environment={
+                "PIPELINE_ENV": "aws",
+                "HOME": "/tmp",
+                "TABLE_NAME": table.table_name,
+                "BUCKET_NAME": data_bucket.bucket_name,
+            },
+            log_group=logs.LogGroup(self, "ResearcherLogs",
+                                    retention=logs.RetentionDays.ONE_MONTH),
+        )
+        table.grant_read_write_data(researcher_fn)
+        data_bucket.grant_read_write(researcher_fn)
+        researcher_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["ssm:GetParameter"],
+            resources=[f"arn:aws:ssm:{self.region}:{self.account}:parameter/tao-pipeline/github-token"],
+        ))
+
+        # Discovery needs to schedule researcher invocations
+        discovery_fn.add_environment("RESEARCHER_ARN", researcher_fn.function_arn)
+
+        # Scheduler role needs to invoke researcher
+        scheduler_role.add_to_policy(iam.PolicyStatement(
+            actions=["lambda:InvokeFunction"],
+            resources=[researcher_fn.function_arn],
+        ))
 
         # =====================================================================
         # IAM: Least Privilege

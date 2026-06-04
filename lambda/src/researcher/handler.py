@@ -150,19 +150,19 @@ def _github_dir(repo: str, path: str = "") -> list[str]:
 
 
 def _get_repo_url(netuid: int) -> Optional[str]:
-    """Look up repo for a subnet from config or DynamoDB."""
-    # Try static mapping first
-    import importlib.resources
-    try:
-        mapping_path = _config.project_root / "config" / "subnet_repos.json"
+    """Look up repo for a subnet from config."""
+    import pathlib
+    # In Lambda: /var/task/config/subnet_repos.json
+    # Locally: lambda/config/subnet_repos.json (relative to project root)
+    for base in [pathlib.Path("/var/task"), pathlib.Path("lambda"), pathlib.Path(".")]:
+        mapping_path = base / "config" / "subnet_repos.json"
         if mapping_path.exists():
             with open(mapping_path) as f:
                 mapping = json.load(f)
             entry = mapping.get(str(netuid))
             if entry:
                 return entry["repo"]
-    except Exception:
-        pass
+            return None
     return None
 
 
