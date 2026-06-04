@@ -50,3 +50,4 @@ node_modules/
 *.csv
 *.xlsx
 ~$*
+cdk.out/
