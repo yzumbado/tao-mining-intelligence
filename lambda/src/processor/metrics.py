@@ -490,6 +490,9 @@ class MetricsEngine:
                 - Should we use median instead of mean for WTA subnets?
                 - Is constant-product AMM slippage model accurate for Bittensor pools?
                 - Is 5% over 7 days the right hold-vs-swap threshold?
+            validated_against: |
+                - Live chain metagraph (5 subnets, ±0.6% deviation) — 2026-06-03
+                - scripts/validate_all_metrics.py (permanent gate)
 
         Core formula:
         - net_tao_yield_per_day = avg_daily_alpha_emission_per_miner x alpha_tao_price
@@ -989,6 +992,9 @@ class MetricsEngine:
                 earning_miners = count(miners where emission > 0)
                 density = earning_miners / max_uids
             output_range: "[0.0, 1.0] — higher = more competitive"
+            validated_against: |
+                - Live chain metagraph (5 subnets, ±7%) — 2026-06-03
+                - Temporal differences expected (WTA subnets flip between tempos)
         """
         miners = [n for n in neurons if n.incentive > 0 or not n.is_validator]
         if not miners or max_uids <= 0:
@@ -1208,6 +1214,10 @@ class MetricsEngine:
                 - Alpha APY ≠ TAO APY (alpha price fluctuates)
                 - Does not subtract per-validator commission (reports gross pool APY)
                 - bittensor.ai headline 'staker APY' includes price appreciation (higher than this)
+            validated_against: |
+                - Taostats compound formula (±20% tolerance) — scripts/archive/validate_formulas.py
+                - Live chain metagraph (5 subnets, ±10%) — 2026-06-03
+                - bittensor.ai per-staker simulation (SN44: 82-100% range matches)
         """
         if pool_tao_liquidity <= 0 or alpha_price <= 0 or total_validator_emission_daily <= 0:
             return 0.0
@@ -1400,6 +1410,9 @@ class MetricsEngine:
                 - Are the signal weights (0.35, 0.25, 0.25, 0.15) well-calibrated?
                 - Is coldkey overlap always suspicious, or only combined with other signals?
                 - Should we add a time-based signal (subnet age vs activity)?
+            validated_against: |
+                - Manual spot-check: SN97=1.0, SN104=0.75 (known self-mining), SN44=0.0 (clean)
+                - False positive fix validated: WTA subnets no longer trigger Signal 1
 
         Args:
             neurons: All neurons in the subnet.

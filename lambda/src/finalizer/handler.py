@@ -346,6 +346,7 @@ def _generate_staking_rankings(all_metrics: dict[int, dict]) -> list[dict]:
             "top_1_stake_share": round(_safe_float(vl.get("top_1_stake_share", 0)), 4),
             "break_even_alpha_depreciation": round(break_even, 4),
             "entry_slippage_10tao": round(entry_slippage, 6),
+            "slippage_model": "constant-product (upper bound)",
         })
 
     staking_ranks.sort(key=lambda r: r["net_apy_percent"], reverse=True)

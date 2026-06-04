@@ -196,6 +196,12 @@ def render_markdown(metrics: list[dict]) -> str:
             lines.append(m["known_issues"])
             lines.append("")
 
+        if m.get("validated_against"):
+            lines.append("### Validated Against")
+            lines.append("")
+            lines.append(m["validated_against"])
+            lines.append("")
+
         if m.get("assumptions"):
             lines.append("### Assumptions to Validate")
             lines.append("")

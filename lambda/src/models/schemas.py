@@ -318,7 +318,7 @@ class ROIEstimate(BaseModel):
     thirty_day_projected_tao: float = Field(description="30-day net TAO projection")
     alpha_tao_rate: float = Field(default=0.0, ge=0.0, description="Alpha/TAO exchange rate")
     slippage_estimate_percent: float = Field(
-        default=0.0, ge=0.0, le=1.0, description="Estimated slippage as decimal"
+        default=0.0, ge=0.0, le=1.0, description="Estimated slippage as decimal (constant-product upper bound; real slippage is lower with concentrated liquidity)"
     )
     hold_vs_swap_recommendation: HoldVsSwap = Field(default=HoldVsSwap.SWAP)
     confidence: Confidence = Field(default=Confidence.LOW)
