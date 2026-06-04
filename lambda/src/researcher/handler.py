@@ -41,14 +41,15 @@ GPU_DEP_KEYWORDS = {"torch", "cuda", "bitsandbytes", "triton", "vllm", "transfor
                     "diffusers", "tensorflow-gpu", "jax[cuda]", "cupy"}
 GPU_README_KEYWORDS = {"gpu", "a100", "h100", "rtx", "vram", "cuda", "nvidia"}
 MODEL_TYPE_KEYWORDS = {
-    "llm_inference": ["llm", "language model", "gpt", "llama", "mistral", "chat", "prompt", "vllm"],
-    "image_generation": ["stable diffusion", "image generat", "diffuser", "dalle", "flux"],
-    "storage": ["storage", "filecoin", "ipfs", "data store"],
-    "compute": ["compute", "training", "pre-train", "fine-tun"],
-    "audio": ["audio", "speech", "tts", "voice", "whisper", "transcription"],
-    "data": ["data scraping", "data universe", "dataset", "crawl"],
-    "zero_knowledge": ["zero knowledge", "zkp", "zk-proof", "prover"],
-    "prediction": ["prediction", "forecast", "oracle", "trading"],
+    "zero_knowledge": ["zero knowledge", "zkp", "zk-proof", "zk proof", "prover"],
+    "prediction": ["price prediction", "forecasting subnet", "trading subnet", "oracle subnet", "time series prediction"],
+    "storage": ["storage subnet", "proof of spacetime", "decentralized storage", "file storage"],
+    "data": ["data scraping subnet", "data universe", "blockchain data subnet", "blockchain insights"],
+    "audio": ["text-to-speech", "speech subnet", "tts subnet", "audio subnet", "whisper", "transcription subnet"],
+    "image_generation": ["stable diffusion", "image generation subnet", "diffuser", "deepfake detection"],
+    "compute": ["pre-training", "pretraining", "distributed training", "fine-tuning subnet", "compute subnet"],
+    "llm_inference": ["llm inference", "language model inference", "vllm", "text generation", "prompting subnet", "inference subnet"],
+    "code": ["code generation", "code completion", "coding subnet", "software development subnet"],
 }
 
 
@@ -189,6 +190,17 @@ def _analyze_repo(repo: str) -> dict:
         "raw_files": {},
     }
 
+    # Use repo description from GitHub as first model-type signal
+    repo_info = _github_request(f"https://api.github.com/repos/{repo}")
+    if repo_info:
+        desc = (repo_info.get("description") or "").lower()
+        name = (repo_info.get("name") or "").lower()
+        combined = f"{name} {desc}"
+        for mtype, keywords in MODEL_TYPE_KEYWORDS.items():
+            if any(k in combined for k in keywords):
+                result["model_type"] = mtype
+                break
+
     root_files = _github_dir(repo)
     result["root_files"] = root_files
 
@@ -239,14 +251,21 @@ def _analyze_repo(repo: str) -> dict:
 
 
 def _parse_min_compute(content: str, result: dict) -> None:
-    """Parse min_compute.yml for hardware requirements."""
+    """Parse min_compute.yml for hardware requirements (miner section)."""
     content_lower = content.lower()
-    if "gpu" in content_lower:
-        if "required: true" in content_lower or "required:true" in content_lower:
+    # Look specifically in the miner section for GPU requirements
+    miner_section = content_lower.split("validator:")[0] if "validator:" in content_lower else content_lower
+    if "miner:" in miner_section:
+        miner_section = miner_section.split("miner:")[1]
+
+    if "gpu" in miner_section:
+        # Check required field explicitly
+        req_match = re.search(r"required:\s*(true|false)", miner_section)
+        if req_match and req_match.group(1) == "true":
             result["gpu_required"] = True
             result["gpu_signals"].append("min_compute.yml:gpu.required=true")
-        # Extract VRAM
-        vram_match = re.search(r"min_vram:\s*(\d+)", content_lower)
+        # Extract VRAM regardless (useful even if GPU is optional)
+        vram_match = re.search(r"min_vram:\s*(\d+)", miner_section)
         if vram_match:
             result["vram_gb_estimate"] = int(vram_match.group(1))
 
@@ -291,7 +310,7 @@ def _parse_readme(content: str, result: dict) -> None:
     """Parse README for model type and GPU keywords."""
     content_lower = content.lower()
 
-    # Model type detection
+    # Model type detection (only if not already detected from repo description)
     if result["model_type"] == "unknown":
         for mtype, keywords in MODEL_TYPE_KEYWORDS.items():
             if any(k in content_lower for k in keywords):
@@ -308,11 +327,30 @@ def _parse_readme(content: str, result: dict) -> None:
 
 def _detect_miner(repo: str, root_files: list[str], result: dict) -> None:
     """Detect if an open-source miner exists."""
-    for path in ["neurons/miner.py", "miner"]:
-        dir_name = path.split("/")[0]
-        if dir_name in root_files:
+    # Check common miner locations
+    if "neurons" in root_files:
+        sub_files = _github_dir(repo, "neurons")
+        if "miner.py" in sub_files:
             result["has_miner"] = True
-            result["miner_entrypoint"] = path
+            result["miner_entrypoint"] = "neurons/miner.py"
+            return
+        if "miners" in sub_files:
+            result["has_miner"] = True
+            result["miner_entrypoint"] = "neurons/miners/"
+            return
+    if "miner" in root_files:
+        result["has_miner"] = True
+        result["miner_entrypoint"] = "miner/"
+        # Check if Go-based (go.mod in miner dir)
+        sub_files = _github_dir(repo, "miner")
+        if "go.mod" in sub_files:
+            result["language"] = "go"
+        return
+    if "src" in root_files:
+        sub_files = _github_dir(repo, "src")
+        if "miner" in sub_files or "miner.py" in sub_files or "miners" in sub_files:
+            result["has_miner"] = True
+            result["miner_entrypoint"] = "src/miner"
             return
     if "miner.py" in root_files:
         result["has_miner"] = True
