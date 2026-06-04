@@ -118,6 +118,9 @@ The Collector (task 4.1) is the completed reference for how Lambda handlers shou
 - Only 4/247 miners earn on SN1 (extreme Winner-Takes-All)
 - Finney endpoint sometimes hangs — circuit breaker handles this
 - No NaN/Inf observed in emission arrays on SN1 (but guard against it)
+- `mg.AS` includes **consensus-locked alpha beyond the pool** — NOT pure staked alpha. For APY, use `pool_tao / alpha_price` as denominator.
+- `mg.S` is NOT just TAO stake — it's total effective weight (alpha + root-weighted TAO). `sum(mg.S) * price > TVL`.
+- `mg.TS` = `mg.S - mg.AS` (root TAO portion only), NOT total_stake = S + AS.
 
 ## Code Structure
 
@@ -137,19 +140,15 @@ lambda/src/
 │   └── state_manager.py   # DynamoDB FSM + config + hotkey tracking
 ├── storage/
 │   └── storage_layer.py   # S3/local filesystem with compression
-├── orchestrator/
-│   └── handler.py         # ⚠️ Legacy Orchestrator Lambda (kept for reference)
 ├── discovery/
 │   └── handler.py         # ✅ Discovery Lambda (hourly safety net)
 ├── subnet_collector/
 │   └── handler.py         # ✅ SubnetCollector Lambda (one subnet per invocation)
-├── collector/
-│   └── handler.py         # ⚠️ Legacy monolithic collector (kept for reference)
 ├── processor/
-│   ├── metrics.py         # ALL algorithms (pure functions, no AWS)
+│   ├── metrics.py         # ALL algorithms (17 pure functions, no AWS)
 │   └── handler.py         # ✅ Processor Lambda (metrics + profiles + hotkeys)
 ├── finalizer/
-│   └── handler.py         # ✅ Finalizer Lambda (briefing + ranking + site)
+│   └── handler.py         # ✅ Finalizer Lambda (briefing + ranking + site + conformance)
 └── site_generator/
     └── generator.py       # ✅ Jinja2 HTML generation
 ```
@@ -171,7 +170,7 @@ lambda/src/
 ### Completed:
 - ✅ Phase 1: SDK validation (connectivity, DynamoDB, SQS/SNS)
 - ✅ Phase 2: Core infrastructure (StateManager, StorageLayer, Instrumentation, Validation, Circuit Breaker)
-- ✅ Phase 3: Metrics Engine (11 algorithms, property + unit tests)
+- ✅ Phase 3: Metrics Engine (17 algorithms, property + unit tests)
 - ✅ Phase 4: Lambda Handlers (Collector 16 tests, Processor 17 tests, Finalizer 12 tests, FSM + Discovery property tests)
 - ✅ Phase 5: Site & Deployment (Jinja2 site 9 tests, CDK 11 tests, E2E integration 2 tests, sanity check)
 - ✅ Security hardening: SSM scoped ARN, DLQ on all queues, S3 encryption, NaN/Inf validation, error propagation
@@ -198,9 +197,13 @@ lambda/src/
 - LLM-powered Subnet Researcher
 
 ### Open Bugs:
-- ⚠️ Staking APY overstated by ~1.6x (reports 11.1% for SN0, real is ~6.8%) — see `kb/bug-staking-apy-overstated.md`
-  - Root cause: formula uses gross validator yield without subtracting validator take rate or modeling root proportion
-  - Fix requires: chain data (tao_weight, per-validator take rate)
+- None critical. All known bugs from previous sessions have been fixed.
+
+### Known Limitations (not bugs):
+- Slippage model uses constant-product formula but Bittensor now uses concentrated liquidity (v3) — our estimate is a conservative upper bound
+- Emission trend shows "stable" for all 129 subnets (correct: emissions are EMA-smoothed and rarely change >1%/day)
+- Briefing shows all 129 subnets as "new" on each run (stale baseline comparison — see epic Phase 4.1)
+- bittensor.ai's headline "staker APY" (496%) includes alpha price appreciation; ours reports pure dividend yield (~82%) — intentionally different metric
 
 ### In Progress: Continuous Conformance System
 - **Design principle**: Human-agent collaboration — agents do continuous verification, humans triage and decide
@@ -298,12 +301,60 @@ lambda/src/
 - [ ] attractiveness_score spread: max - min > 0.3 (if all scores cluster, formula is broken)
 
 ### Architecture state after this session:
-- MetricsEngine: 15 algorithms (was 11), all pure functions, all property-tested
+- MetricsEngine: 17 algorithms (was 15), all pure functions, 607 duplicate lines removed
 - StateManager: sole DynamoDB access layer (was fragmented across 3 handlers)
-- Finalizer: conformance post-conditions run on every invocation
+- Finalizer: conformance post-conditions run on every invocation (10 checks now)
 - Pipeline: accumulating daily stake data (STAKE_HISTORY#{netuid}#{date})
 - Contract test: Processor→Finalizer boundary validated with real data flow
 - Attractiveness score: risk-adjusted (yield×0.30 + flow×0.25 + emission×0.25 + depth×0.20 × penalty)
+- APY: uses pool_alpha denominator (validated against bittensor.ai within ±10%)
+- Rankings output: now includes concentration_risk field
+
+### Session 2026-06-03 Findings (context for next agent):
+
+#### Major Accomplishments:
+- **APY formula rewritten AGAIN** — was 10-16x too low (wrong denominator: mg.AS vs pool_alpha). POC against live chain confirmed pool_tao/alpha_price is the correct denominator. Now matches bittensor.ai per-staker simulation within ±10%.
+- **APY overflow eliminated** — 21 subnets had APY >1000% (SN122 at 128 BILLION %). Root cause: near-zero stake + compound exponentiation. Fixed with stake guard (<100) and rate guard (>2.0).
+- **Self-mining false positives fixed** — was 76/129 (59%) flagged. Root cause: Signal 1 fired on all WTA subnets (1 earning miner). Fixed: now requires validators ≤ 2 to fire.
+- **607 lines of dead duplicate code removed** from metrics.py
+- **design.md rewritten** — old 2091 lines (batch model) → 425 lines (actual AD18 architecture)
+- **requirements.md rewritten** — old 43 requirements (600 lines, batch model) → 19 requirements (237 lines, actual system)
+- **docs/architecture/ deleted** — was a stale duplicate of .kiro/specs/design.md
+- **Permanent validation gate created** — `scripts/validate_all_metrics.py` queries live chain, compares 5 subnets, exits 1 on failure. MUST pass before every deploy.
+- **Conformance checks 9-10 added** — APY overflow (>5000%) and APY floor (>20% for 30%+ subnets)
+- **Metrics validation epic created** — `kb/epic-metrics-validation.md` (Phase 1-3 complete, Phase 4 backlog)
+
+#### Cross-Validation Results (live chain, 5 subnets):
+- alpha_price: ✅ <0.6% deviation
+- net_tao_yield: ✅ <0.6% deviation
+- real_apy_percent: ✅ within ±10% (new formula)
+- competitive_density: ✅ correct formula
+- self_mining_risk: ✅ true positives confirmed, false positive fixed
+
+#### Key Patterns Discovered:
+1. **"mg.AS ≠ pool alpha"** — mg.AS includes consensus-locked alpha beyond the staking pool. pool_tao/alpha_price is the correct denominator for per-staker yield.
+2. **"Same name, different metric"** — bittensor.ai's "496% staker APY" includes price appreciation. Their per-staker simulation ("Stake 1000τ → 40.70α/day") gives 82% pure yield. Always compare against the SIMULATION, not the headline.
+3. **"Property tests can't catch value bugs"** — 205 tests passed while APY was 10x wrong. Only cross-provider validation catches these.
+4. **"59% false positive = broken heuristic"** — The self-mining signal was too aggressive for WTA subnets. Gate on validator count fixed it.
+5. **"POC first, always"** — The live chain POC (5 min to write) immediately revealed the mg.AS issue that would have taken hours to figure out from code alone.
+
+#### Pending Tasks (next session):
+
+**Deployment (P0 — deploy code to Lambda):**
+- [ ] Deploy current code to Lambda (APY fix, self-mining fix, concentration_risk in output)
+- [ ] Run `scripts/validate_all_metrics.py` after pipeline refreshes — should show 0 failures
+- [ ] Verify production APY: SN44 should be ~80-100%, not 36%
+
+**Epic Phase 4 (P2 — findings from validation):**
+- [ ] Fix briefing "new subnet" false alerts (129/129 show as new every run)
+- [ ] Label slippage as "upper bound (constant-product model)"
+- [ ] Monitor emission_trend for first real non-stable event
+
+**Backlog (P3):**
+- [ ] Phase 3 task 3.3: Update metrics-reference.md with "validated against" sources
+- [ ] taoflow_health activation (needs 7+ days emission history — check after 2026-06-08)
+- [ ] DeepCollector Lambda (per-UID chain data)
+- [ ] Stage 2: RESEARCH (LLM-powered subnet researcher)
 
 ### Session 2026-05-19 Findings (context for next agent):
 - Output contract bugs: tests used idealized mock data that didn't match production shapes
@@ -320,13 +371,13 @@ lambda/src/
 # If setting up fresh: /opt/homebrew/bin/python3.12 -m venv .venv
 
 source .venv/bin/activate
-.venv/bin/pytest tests/ -v          # All 206 tests
-.venv/bin/pytest tests/properties/  # Property tests only (96 tests)
-.venv/bin/pytest tests/unit/        # Unit tests only (87 tests)
-.venv/bin/pytest tests/integration/ # E2E integration (2 tests)
-.venv/bin/pytest tests/cdk/         # CDK assertions (13 tests)
+.venv/bin/pytest tests/ -v          # All 205 tests
+.venv/bin/pytest tests/properties/  # Property tests only
+.venv/bin/pytest tests/unit/        # Unit tests only
+.venv/bin/pytest tests/integration/ # E2E integration
+.venv/bin/pytest tests/cdk/         # CDK assertions
+python scripts/validate_all_metrics.py  # Cross-provider validation gate (needs internet)
 python scripts/test_e2e_local.py    # Live chain test (needs internet)
-python scripts/validate_fields.py   # SDK field validation (needs internet)
 ```
 
 ## How to Document Progress
