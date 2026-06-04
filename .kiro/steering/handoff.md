@@ -69,11 +69,11 @@ Processor Lambda (one invocation per subnet)
     ├── Runs MetricsEngine (pure functions) on the data
     ├── Stores derived metrics to S3 (with processed_at)
     ├── Writes profiles to DynamoDB (with processed_at)
-    ├── Invokes Aggregator (async) → rankings recompute
+    ├── Invokes Finalizer (async) → rankings recompute
     └── Creates next EventBridge schedule (tempo-based, self-perpetuating)
                 │
                 ▼
-Aggregator Lambda (invoked after each subnet completes)
+Finalizer Lambda (invoked after each subnet completes)
     ├── Reads ALL current profiles from DynamoDB
     ├── Generates rankings from whatever data exists
     ├── Generates daily briefing (rolling 24h changes)
@@ -82,10 +82,9 @@ Aggregator Lambda (invoked after each subnet completes)
 
 ## Reference Implementation: Collector Lambda
 
-The Collector (task 4.1) is the completed reference for how Lambda handlers should be built. Use it as the pattern for Processor and Finalizer:
+The SubnetCollector is the completed reference for how Lambda handlers should be built. Use it as the pattern for new handlers:
 
-- **Test file**: `tests/unit/test_collector.py` — 16 tests covering idempotency, partial failure, graceful shutdown, SQS format, data validation, concurrency
-- **Handler**: `lambda/src/collector/handler.py` — module-level singletons for config/state/storage, `handle()` entry point, full instrumentation
+- **Handler**: `lambda/src/subnet_collector/handler.py` — module-level singletons for config/state/storage, `handle()` entry point, full instrumentation
 - **Pattern**: Module caches (`_config`, `_state_manager`, `_storage`), reset in test fixtures. Tests use `@mock_aws` + moto. Each test class covers one concern.
 
 ## Key Architecture Decisions
