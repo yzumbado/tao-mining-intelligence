@@ -8,10 +8,22 @@ MUST pass before every deploy. Run with:
     python scripts/validate_all_metrics.py
 
 Exit code 0 = all pass, 1 = failures found.
+
+Architecture:
+1. RPC fast pre-check (~2s): alpha_price via raw Substrate RPC.
+   If price deviates >5%, fail immediately — no point pulling metagraphs.
+2. Full validation (~30s): metagraph-based checks for yield, APY, density.
+
+NOTE on APY check: This compares our output against our OWN formula
+(MetricsEngine.compute_real_apy) applied to fresh chain data. It is a
+FRESHNESS check (catches stale pipeline data), NOT a cross-formula check.
+The formula itself was validated against taostats methodology in session
+2026-06-03 (see scripts/archive/validate_formulas.py).
 """
 
 import asyncio
 import json
+import struct
 import sys
 import urllib.request
 from datetime import datetime, timezone
@@ -24,6 +36,7 @@ HISTORY_FILE = Path("data/validation_history.jsonl")
 
 REFERENCE_SUBNETS = [44, 1, 11, 9, 64]
 RANKINGS_URL = "https://dkfh19zkgqq18.cloudfront.net/data/rankings.json"
+RPC_ENDPOINT = "https://entrypoint-finney.opentensor.ai"
 
 # Tolerances (percent deviation allowed)
 TOLERANCE = {
@@ -33,6 +46,56 @@ TOLERANCE = {
     "competitive_density": 30.0,
 }
 
+FAST_CHECK_PRICE_TOLERANCE = 5.0  # fail fast if price off by >5%
+
+
+def _rpc_call(method: str, params: list = None) -> dict:
+    """Raw Substrate JSON-RPC call (independent of SDK)."""
+    payload = json.dumps({
+        "jsonrpc": "2.0", "id": 1,
+        "method": method, "params": params or []
+    }).encode()
+    req = urllib.request.Request(
+        RPC_ENDPOINT, data=payload,
+        headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read())
+
+
+def _rpc_alpha_price(netuid: int) -> float | None:
+    """Get alpha price via SwapRuntimeApi (no SDK needed)."""
+    params_hex = struct.pack("<H", netuid).hex()
+    result = _rpc_call("state_call", ["SwapRuntimeApi_current_alpha_price", "0x" + params_hex])
+    raw = result.get("result")
+    if not raw or raw == "0x":
+        return None
+    data = bytes.fromhex(raw[2:])
+    return int.from_bytes(data[:8], "little") / 1e9 if len(data) >= 8 else None
+
+
+def _fast_pre_check(our_data: dict) -> bool:
+    """RPC price check (~2s). Returns False if obvious failure detected."""
+    print("--- Fast pre-check (RPC price) ---")
+    for netuid in [44, 1, 64]:
+        try:
+            rpc_price = _rpc_alpha_price(netuid)
+            our_price = our_data.get(netuid, {}).get("alpha_price", 0)
+            if rpc_price and our_price > 0:
+                delta = abs(rpc_price - our_price) / our_price * 100
+                status = "✅" if delta <= FAST_CHECK_PRICE_TOLERANCE else "🔴"
+                print(f"  SN{netuid} price: RPC={rpc_price:.6f} Ours={our_price:.6f} Δ={delta:.1f}% {status}")
+                if delta > FAST_CHECK_PRICE_TOLERANCE:
+                    print(f"\n🔴 FAST FAIL: SN{netuid} price deviation {delta:.1f}% > {FAST_CHECK_PRICE_TOLERANCE}%")
+                    print("   Pipeline data is significantly stale. Skipping expensive metagraph checks.")
+                    return False
+        except Exception as e:
+            print(f"  SN{netuid} price: RPC error ({e}) — skipping fast check")
+            return True  # can't fast-check, proceed to full validation
+    print("  Pre-check passed ✅")
+    print()
+    return True
+
 
 async def main():
     import bittensor
@@ -40,6 +103,12 @@ async def main():
     # Fetch our live output
     with urllib.request.urlopen(RANKINGS_URL) as resp:
         our_data = {r["netuid"]: r for r in json.loads(resp.read())}
+
+    # Fast pre-check: RPC price validation (~2s)
+    # If price is way off, skip expensive metagraph pulls
+    if not _fast_pre_check(our_data):
+        _append_history([], ["FAST_FAIL: price deviation > 5%"])
+        sys.exit(1)
 
     failures = []
     all_results = []

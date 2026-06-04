@@ -39,10 +39,9 @@ cd cdk && npx cdk deploy --require-approval never 2>&1 | tail -10
 cd ..
 echo ""
 
-# Post-deploy: wait for pipeline refresh then validate
-echo "5/5 Waiting 5 minutes for pipeline refresh..."
-sleep 300
-echo "     Running post-deploy validation..."
-.venv/bin/python scripts/validate_all_metrics.py
+# Post-deploy: quick RPC spot check (no 5-min wait needed for price)
+echo "5/5 Post-deploy spot check..."
+sleep 30  # brief wait for at least one subnet to refresh
+.venv/bin/python scripts/validate_against_providers.py
 echo ""
 echo "=== Deploy complete ==="
