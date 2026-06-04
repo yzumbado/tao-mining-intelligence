@@ -33,6 +33,24 @@ An autonomous pipeline that continuously collects Bittensor subnet data, compute
 
 **Current stage**: Stage 1 (COLLECT) is complete and autonomous. Stage 2 (RESEARCH) is next.
 
+## Bittensor in 60 Seconds
+
+Bittensor is a decentralized network where ~129 **subnets** compete for TAO tokens (like ETH for Ethereum). Each subnet is a marketplace for a specific AI task — computer vision, LLM inference, data storage, etc. Two roles:
+
+- **Miners** provide work (GPU compute, AI inference) and earn TAO based on quality
+- **Validators** score miners' work and earn TAO for maintaining quality
+
+Each subnet has its own **alpha token** (like an LP token) that trades against TAO on an AMM pool. When you stake/mine on a subnet, you earn alpha which you convert to TAO.
+
+**Our pipeline answers**: "Which of the 129 subnets should I register on to earn the most TAO?" — considering yield, competition, risk, and liquidity. Think of it as a Bloomberg terminal for Bittensor mining opportunities.
+
+## How the Output Is Used
+
+The user (or Kiro agent) reads our `rankings.json` and makes decisions like:
+- "SN44 has 82% APY and low self-mining risk → stake 1000τ there"
+- "SN97 scores 0.0 (self-mining=1.0) → avoid, emissions will be blocked"
+- "SN9 yields 95τ/day but only 1 earning miner → extreme WTA, only enter if I can be top"
+
 ## How to Orient Yourself
 
 1. **Start here**: This file (handoff.md) — project context, pending tasks, session history
@@ -166,26 +184,11 @@ lambda/src/
 - See `kb/architecture-decision-18-independent-refresh.md` for full design
 
 ### Completed:
-- ✅ Phase 1: SDK validation (connectivity, DynamoDB, SQS/SNS)
-- ✅ Phase 2: Core infrastructure (StateManager, StorageLayer, Instrumentation, Validation, Circuit Breaker)
-- ✅ Phase 3: Metrics Engine (17 algorithms, property + unit tests)
-- ✅ Phase 4: Lambda Handlers (Collector 16 tests, Processor 17 tests, Finalizer 12 tests, FSM + Discovery property tests)
-- ✅ Phase 5: Site & Deployment (Jinja2 site 9 tests, CDK 11 tests, E2E integration 2 tests, sanity check)
-- ✅ Security hardening: SSM scoped ARN, DLQ on all queues, S3 encryption, NaN/Inf validation, error propagation
-- ✅ Deployment: Docker import fix, ARM64, lambda_patch, DLQ alarms, OPERATIONS.md
-- ✅ First live run: 129/129 collected, 128 processed, rankings generated
-- ✅ AD18 Phase 1: Configurable refresh policy, processed_at timestamps, validation relaxation
-- ✅ Tech debt: zero known issues
-- ✅ Metrics data fix: active field misinterpretation (deregistration risk, density, attractiveness ceiling)
-- ✅ Staking Intelligence: compute_staking_yield metric + staking_rankings.json endpoint
-- ✅ HTML site generation: index.html, rankings.html, briefing.html via Jinja2
-- ✅ SNS alerting: staleness alarm → yzumbado@gmail.com
-- ✅ Auto-generated metrics reference: kb/metrics-reference.md from code docstrings
-- ✅ Agent plan execution research: kb/agent-plan-execution-research.md
-- ✅ Self-mining risk detection: compute_self_mining_risk() — 4 signals, 7 property tests
-- ✅ Proven ecosystem metrics: real APY, Net TAO Flow (EMA), VTrust surfacing, daily stake accumulation
-- ✅ Attractiveness score redesign: risk-adjusted formula (yield×0.30 + flow×0.25 + emission×0.25 + depth×0.20 × self_mining_penalty)
-- ✅ Test audit + fixes: 2 CRITICAL (S3 path mismatch, missing mock fields) + 4 HIGH (ranking toy test, dereg always 0, unrealistic emissions, threshold by accident)
+- ✅ All 5 development phases complete (SDK validation → core infra → metrics → handlers → site/deploy)
+- ✅ 205 tests passing (property, unit, integration, CDK)
+- ✅ 17 metric algorithms, all cross-validated against live chain
+- ✅ Security hardening, SNS alerting, conformance post-conditions
+- ✅ AD18 independent refresh fully implemented (old batch model removed)
 
 ### Descoped (Phase 2+):
 - `subnet.html` and `health.html` templates (4 templates shipped, 2 deferred)
