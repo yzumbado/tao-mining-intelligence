@@ -14,9 +14,13 @@ import asyncio
 import json
 import sys
 import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
 
 sys.path.insert(0, "lambda")
 from src.processor.metrics import MetricsEngine
+
+HISTORY_FILE = Path("data/validation_history.jsonl")
 
 REFERENCE_SUBNETS = [44, 1, 11, 9, 64]
 RANKINGS_URL = "https://dkfh19zkgqq18.cloudfront.net/data/rankings.json"
@@ -38,6 +42,7 @@ async def main():
         our_data = {r["netuid"]: r for r in json.loads(resp.read())}
 
     failures = []
+    all_results = []
 
     async with bittensor.AsyncSubtensor() as sub:
         print(f"{'SN':>4} {'Metric':<22} {'Chain':>12} {'Ours':>12} {'Δ%':>6} {'Result'}")
@@ -94,12 +99,23 @@ async def main():
                 if not passed:
                     failures.append(f"SN{netuid} {metric}: {delta:.1f}% > {tol}%")
 
+                all_results.append({
+                    "netuid": netuid,
+                    "metric": metric,
+                    "expected": round(exp_val, 6),
+                    "actual": round(our_val, 6),
+                    "deviation_pct": round(delta, 2),
+                })
+
                 print(
                     f"{netuid:>4} {metric:<22} {exp_val:>12.4f} {our_val:>12.4f} "
                     f"{delta:>5.1f}% {status}"
                 )
 
             print("-" * 68)
+
+    # Append to history
+    _append_history(all_results, failures)
 
     print()
     if failures:
@@ -111,6 +127,19 @@ async def main():
     else:
         print("✅ ALL METRICS PASS — safe to deploy.")
         sys.exit(0)
+
+
+def _append_history(results: list[dict], failures: list[str]):
+    """Append validation run to JSONL history file."""
+    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "results": results,
+        "pass": len(failures) == 0,
+        "failures": failures,
+    }
+    with open(HISTORY_FILE, "a") as f:
+        f.write(json.dumps(entry) + "\n")
 
 
 if __name__ == "__main__":

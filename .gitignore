@@ -28,6 +28,9 @@ cdk.context.json
 output/
 /tmp/tao-test-output/
 
+# Validation history (local dev state)
+data/validation_history.jsonl
+
 # Environment and secrets
 .env
 .env.local
