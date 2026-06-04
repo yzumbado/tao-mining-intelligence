@@ -31,19 +31,16 @@ logger = logging.getLogger("tao-pipeline")
 _config: Optional[PipelineConfig] = None
 _state_manager: Optional[StateManager] = None
 _storage: Optional[StorageLayer] = None
-_sns_client: Optional[Any] = None
 
 
 def _init_clients() -> None:
     """Initialize AWS clients and config on cold start (cached)."""
-    global _config, _state_manager, _storage, _sns_client
+    global _config, _state_manager, _storage
     if _config is not None:
         return
     _config = get_config()
     _state_manager = StateManager(_config)
     _storage = StorageLayer(_config)
-    if _config.is_aws and _config.queue.subnet_processed_topic_arn:
-        _sns_client = boto3.client("sns", region_name=_config.region)
 
 
 def handle(event: dict, context: Any) -> dict:
@@ -208,9 +205,6 @@ def handle(event: dict, context: Any) -> dict:
         except Exception as e:
             logger.warning(f"Per-subnet COMPLETE transition failed (best-effort): {e}")
 
-        # Publish SNS completion (legacy path — kept for backward compat)
-        sns_published = _publish_completion(netuid, date, cycle_id, trace_id)
-
         # Invoke Aggregator to recompute rankings (AD18: rankings are a live view)
         _invoke_aggregator(netuid, date, cycle_id, trace_id)
 
@@ -218,7 +212,6 @@ def handle(event: dict, context: Any) -> dict:
         next_scheduled = _schedule_next_collection(netuid, tempo)
 
         ctx["metrics_computed"] = metrics_computed
-        ctx["sns_published"] = sns_published
         ctx["next_scheduled"] = next_scheduled
 
         return {
@@ -227,7 +220,6 @@ def handle(event: dict, context: Any) -> dict:
             "cycle_id": cycle_id,
             "trace_id": trace_id,
             "metrics_computed": metrics_computed,
-            "sns_published": sns_published,
             "next_scheduled": next_scheduled,
         }
 
@@ -616,30 +608,6 @@ def _schedule_next_collection(netuid: int, tempo: int) -> bool:
         logger.warning(f"Failed to schedule next collection for SN{netuid}: {e}")
         return False
 
-
-def _publish_completion(netuid: int, date: str, cycle_id: str, trace_id: str) -> bool:
-    """Publish completion message to SNS topic."""
-    if not _sns_client or not _config.queue.subnet_processed_topic_arn:
-        return False
-
-    message = json.dumps({
-        "netuid": netuid,
-        "date": date,
-        "cycle_id": cycle_id,
-        "trace_id": trace_id,
-        "status": "complete",
-    })
-
-    try:
-        _sns_client.publish(
-            TopicArn=_config.queue.subnet_processed_topic_arn,
-            Message=message,
-            Subject=f"subnet-{netuid}-processed",
-        )
-        return True
-    except Exception as e:
-        logger.error(f"Failed to publish SNS for netuid={netuid}: {e}")
-        return False
 
 
 # ---------------------------------------------------------------------------

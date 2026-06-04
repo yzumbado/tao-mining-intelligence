@@ -422,61 +422,6 @@ class TestMissingPreviousDay:
 # ---------------------------------------------------------------------------
 
 
-class TestSNSPublish:
-    """Test that SNS completion messages have the correct format."""
-
-    @mock_aws
-    def test_publishes_completion_to_sns(self, aws_env, lambda_context):
-        """After processing, publishes a completion message to SNS topic."""
-        _create_dynamodb_table()
-        _create_s3_bucket()
-        _create_sns_topic()
-        _seed_raw_data()
-        _seed_previous_day()
-
-        from src.processor.handler import handle
-
-        result = handle(_make_sqs_event(), lambda_context)
-
-        assert result["status"] == "complete"
-        assert result.get("sns_published") is True
-
-    @mock_aws
-    def test_sns_message_contains_required_fields(self, aws_env, lambda_context):
-        """SNS message must contain netuid, date, cycle_id, trace_id, status."""
-        _create_dynamodb_table()
-        _create_s3_bucket()
-        _create_sns_topic()
-        _seed_raw_data()
-        _seed_previous_day()
-
-        # Subscribe an SQS queue to capture SNS messages
-        sqs = boto3.client("sqs", region_name="us-east-1")
-        queue = sqs.create_queue(QueueName="test-capture")
-        queue_url = queue["QueueUrl"]
-        queue_arn = "arn:aws:sqs:us-east-1:123456789012:test-capture"
-
-        sns = boto3.client("sns", region_name="us-east-1")
-        sns.subscribe(
-            TopicArn="arn:aws:sns:us-east-1:123456789012:subnet-processed",
-            Protocol="sqs", Endpoint=queue_arn,
-        )
-
-        from src.processor.handler import handle
-
-        handle(_make_sqs_event(trace_id="trace-xyz"), lambda_context)
-
-        messages = sqs.receive_message(QueueUrl=queue_url, MaxNumberOfMessages=1)
-        assert "Messages" in messages
-        body = json.loads(messages["Messages"][0]["Body"])
-        sns_message = json.loads(body["Message"])
-
-        assert sns_message["netuid"] == 1
-        assert sns_message["date"] == "2026-05-15"
-        assert sns_message["cycle_id"] == "2026-05-15"
-        assert sns_message["trace_id"] == "trace-xyz"
-        assert sns_message["status"] == "complete"
-
 
 # ---------------------------------------------------------------------------
 # Test: Split profile writes
