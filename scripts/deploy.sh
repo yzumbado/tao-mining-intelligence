@@ -6,7 +6,49 @@ set -e
 SKIP_VALIDATION=false
 if [ "$1" = "--skip-validation" ]; then
     SKIP_VALIDATION=true
-    echo "⚠️  --skip-validation: chain validation gate SKIPPED (emergency only)"
+fi
+
+# --- Prerequisites ---
+echo "=== Prerequisites ==="
+FAIL=false
+
+if ! .venv/bin/python --version 2>/dev/null | grep -q "3.12"; then
+    echo "❌ Python 3.12 venv not found. Run: /opt/homebrew/bin/python3.12 -m venv .venv && pip install -e '.[dev]'"
+    FAIL=true
+else
+    echo "✅ Python 3.12 venv"
+fi
+
+if ! docker info >/dev/null 2>&1; then
+    echo "❌ Docker not running. Run: colima start"
+    FAIL=true
+else
+    echo "✅ Docker (Colima)"
+fi
+
+if ! aws sts get-caller-identity --profile tao >/dev/null 2>&1; then
+    echo "❌ AWS profile 'tao' not authenticated. Check ~/.aws/credentials"
+    FAIL=true
+else
+    echo "✅ AWS profile 'tao'"
+fi
+
+if ! which npx >/dev/null 2>&1; then
+    echo "❌ npx not found. Install Node.js"
+    FAIL=true
+else
+    echo "✅ Node.js/npx"
+fi
+
+if [ "$FAIL" = true ]; then
+    echo ""
+    echo "Fix prerequisites above before deploying."
+    exit 1
+fi
+echo ""
+
+if [ "$SKIP_VALIDATION" = true ]; then
+    echo "⚠️  --skip-validation: chain validation gate SKIPPED"
     echo ""
 fi
 
