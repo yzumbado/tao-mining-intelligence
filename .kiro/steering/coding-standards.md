@@ -4,6 +4,22 @@ inclusion: always
 
 # TAO Mining Intelligence Pipeline — Coding Standards
 
+## Development Workflow
+
+When building a new feature or fixing a bug, follow this order:
+
+1. **POC against live chain** (5 min) — verify your assumptions about field values, API behavior, or formula correctness BEFORE writing production code
+2. **Write property test** — define what "correct" means (bounds, monotonicity, edge cases)
+3. **Implement** — write the minimum code to pass the test
+4. **Run all tests** — `pytest tests/ -q` (205 must pass)
+5. **Cross-validate** — `python scripts/validate_all_metrics.py` (compare against live chain)
+6. **Update docs** — if you changed a metric, run `python scripts/generate_metrics_reference.py`
+7. **Commit** — following the structured commit format below
+8. **Deploy** — `./scripts/deploy.sh` (runs tests, deploys, validates post-deploy)
+9. **Verify production** — check live output at `https://dkfh19zkgqq18.cloudfront.net/data/rankings.json`
+
+**Key rule**: Steps 1 and 5 are what catch value bugs. Tests (step 4) catch structural bugs. Both are mandatory.
+
 ## General Principles
 
 - Python 3.12, type hints on all function signatures
@@ -93,8 +109,6 @@ lambda/src/
 │   └── state_manager.py   # DynamoDB FSM + config + hotkey tracking
 ├── storage/
 │   └── storage_layer.py   # S3/local filesystem with compression
-├── orchestrator/
-│   └── handler.py         # ⚠️ Legacy Orchestrator Lambda (kept for reference)
 ├── discovery/
 │   └── handler.py         # Discovery Lambda (hourly safety net)
 ├── subnet_collector/
@@ -102,8 +116,6 @@ lambda/src/
 ├── processor/
 │   ├── metrics.py         # Pure computation (all algorithms)
 │   └── handler.py         # Lambda handler (wires components)
-├── collector/
-│   └── handler.py         # Legacy monolithic collector (reference only)
 ├── finalizer/
 │   └── handler.py         # Lambda handler (briefing + ranking + site)
 └── site_generator/
