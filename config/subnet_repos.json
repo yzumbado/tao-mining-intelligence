@@ -1,0 +1,134 @@
+{
+  "1": {
+    "repo": "macrocosm-os/prompting",
+    "description": "SN1: An incentive mechanism for internet-scale intelligence",
+    "language": "Python",
+    "last_push": "2026-06-04"
+  },
+  "2": {
+    "repo": "inference-labs-inc/omron-subnet",
+    "description": "Verifiable inference on Bittensor",
+    "language": "Rust",
+    "last_push": "2026-06-04"
+  },
+  "4": {
+    "repo": "manifold-inc/targon",
+    "description": "A library for building subnets with the manifold reward stack",
+    "language": "Go",
+    "last_push": "2026-05-21"
+  },
+  "5": {
+    "repo": "OpenKaito/openkaito",
+    "description": "Decentralized Embedding in Bittensor SN5",
+    "language": "Jupyter Notebook",
+    "last_push": "2025-03-04"
+  },
+  "6": {
+    "repo": "NousResearch/finetuning-subnet",
+    "description": "",
+    "language": "Python",
+    "last_push": "2024-05-19"
+  },
+  "7": {
+    "repo": "eclipsevortex/SubVortex",
+    "description": "",
+    "language": "Python",
+    "last_push": "2025-09-08"
+  },
+  "8": {
+    "repo": "taoshidev/proprietary-trading-network",
+    "description": "Vanta Network built on Bittensor",
+    "language": "Python",
+    "last_push": "2026-06-04"
+  },
+  "9": {
+    "repo": "macrocosm-os/pretraining",
+    "description": "Pretraining",
+    "language": "Python",
+    "last_push": "2025-05-28"
+  },
+  "10": {
+    "repo": "apollozkp/zkp-subnet",
+    "description": "A subnet on Bittensor which is capable of computing zero-knowledge proofs in a collaborative way, providing linear scali",
+    "language": "Python",
+    "last_push": "2024-06-13"
+  },
+  "11": {
+    "repo": "macrocosm-os/data-universe",
+    "description": "A Bittensor subnet for collecting and storing valuable data for other subnets",
+    "language": "Python",
+    "last_push": "2026-06-01"
+  },
+  "12": {
+    "repo": "backend-developers-ltd/ComputeHorde",
+    "description": "",
+    "language": "Python",
+    "last_push": "2026-05-04"
+  },
+  "13": {
+    "repo": "macrocosm-os/finetuning",
+    "description": "",
+    "language": "Python",
+    "last_push": "2025-05-16"
+  },
+  "15": {
+    "repo": "blockchain-insights/blockchain-data-subnet",
+    "description": "Blockchain data insights",
+    "language": "Python",
+    "last_push": "2024-08-25"
+  },
+  "17": {
+    "repo": "PlixML/pixel",
+    "description": "[\ud83d\udc09] Finetuning/Pre-training a Diffusion model on Bittensor network using Vision Subnet",
+    "language": "Python",
+    "last_push": "2024-04-25"
+  },
+  "22": {
+    "repo": "surcyf123/smart-scrape",
+    "description": "Subnet 22",
+    "language": "Python",
+    "last_push": "2026-05-29"
+  },
+  "24": {
+    "repo": "omegalabsinc/omegalabs-bittensor-subnet",
+    "description": "The World's Largest Decentralized AGI Multimodal Dataset",
+    "language": "Python",
+    "last_push": "2025-12-17"
+  },
+  "27": {
+    "repo": "Datura-ai/compute-subnet",
+    "description": "",
+    "language": "Python",
+    "last_push": "2026-06-04"
+  },
+  "29": {
+    "repo": "fractal-net/fractal",
+    "description": "Text to video subnet",
+    "language": "Python",
+    "last_push": "2024-07-11"
+  },
+  "32": {
+    "repo": "It-s-AI/llm-detection",
+    "description": "It's AI: LLM Detection Subnet (SN32)",
+    "language": "Python",
+    "last_push": "2026-05-16"
+  },
+  "34": {
+    "repo": "bitmind-ai/bitmind-subnet",
+    "description": "",
+    "language": "Python",
+    "last_push": "2026-06-03"
+  },
+  "37": {
+    "repo": "macrocosm-os/folding",
+    "description": "Generalized Scientific Compute on BIttensor",
+    "language": "Python",
+    "last_push": "2025-09-29"
+  },
+  "64": {
+    "repo": "macrocosm-os/atom",
+    "description": "The software development kit for Bittensor subnetworks ",
+    "language": "Python",
+    "last_push": "2025-06-30"
+  }
+}

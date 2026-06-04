@@ -47,6 +47,42 @@ Finalizer reads enrichment on next cycle (opportunistic)
 
 When Finalizer detects a subnet jumped 10+ positions, it flags it in DynamoDB. Discovery schedules immediate research for flagged subnets (don't wait 7 days).
 
+### AD-R6: GitHub PAT Required (POC-Validated)
+
+Unauthenticated rate limit (60/hr) is insufficient — a single research cycle for 30 subnets burns through it. PAT stored in Parameter Store at `/tao-pipeline/github-token` gives 5000/hr.
+
+### AD-R7: URL Validation on Every Run (POC-Validated)
+
+Static repo mappings are 38-56% stale within months. The researcher must HEAD-check URLs before fetching content and handle 404s gracefully (mark as "repo_not_found", not crash).
+
+---
+
+## POC-Validated Findings (2026-06-04)
+
+These findings override earlier assumptions in this design:
+
+| Assumption | POC Result | Design Impact |
+|-----------|-----------|--------------|
+| min_compute.yml is widely adopted | Only 2-3/16 repos have it (15%) | Heuristics are primary, min_compute.yml is bonus |
+| Static repo lists are a good seed | 38-56% dead links | Must validate URLs every run |
+| Repo names are stable | Major repos renamed within a year | Need self-healing discovery |
+| 60 req/hr is workable | Burns through in one session | GitHub PAT is mandatory |
+| README keywords detect model type | 60% accuracy | Multi-signal approach needed |
+
+### Multi-File Scanning Cascade (Priority Order)
+
+```
+1. min_compute.yml     → Structured YAML, instant (if exists)
+2. Dockerfile          → FROM image reveals GPU (nvidia/cuda), deps
+3. docker-compose.yml  → GPU device mapping, service architecture
+4. requirements.txt    → torch/cuda/vllm = GPU required
+5. pyproject.toml      → Same as above, modern Python
+6. go.mod / Cargo.toml → Language detection (not Python = different approach)
+7. README.md           → Keywords for model type, hardware mentions
+```
+
+For each file, scan in THIS order. Stop GPU detection at first confirmed signal.
+
 ---
 
 ## Data Flow
@@ -124,34 +160,70 @@ With LLM enrichment (upgrade):
 
 ## Detection Heuristics (No LLM)
 
-| Signal | Detection Method |
-|--------|-----------------|
-| GPU required | `torch`, `cuda`, `bitsandbytes`, `triton` in requirements.txt |
-| Model type | README keywords → category mapping (LLM, image, audio, storage, compute) |
-| VRAM estimate | Model name (llama-70b → 40GB, stable-diffusion → 8GB) lookup table |
-| Open-source miner | File exists: `neurons/miner.py`, `miner/`, `src/miner` |
-| Difficulty | Has runnable miner + clear docs = trivial. Needs custom model = hard. |
-| Compute cost | GPU tier × hourly rate from known pricing table |
+Scanning cascade — check files in priority order, stop at first confirmed signal:
+
+| Priority | File | GPU Signal | Model Type Signal |
+|----------|------|-----------|------------------|
+| 1 | `min_compute.yml` | `gpu.required: true`, `gpu.min_vram` | — |
+| 2 | `Dockerfile` | `FROM nvidia/cuda`, `--gpus`, runtime flags | Base image (vllm, transformers) |
+| 3 | `docker-compose*.yml` | `deploy.resources.reservations.devices` | Service names (miner, validator) |
+| 4 | `requirements.txt` | torch, cuda, bitsandbytes, vllm, triton | transformers, diffusers, whisper |
+| 5 | `pyproject.toml` | Same as above in `[dependencies]` | Same |
+| 6 | `go.mod` / `Cargo.toml` | — (language detection only) | Non-Python = custom build needed |
+| 7 | `README.md` | "A100", "GPU", "VRAM", "CUDA" keywords | "LLM", "image", "storage", etc |
+
+**Also check subdirectories** (`neurons/`, `miner/`, `src/`) for deps files — modern repos use workspaces where root has no dependencies.
+
+### Miner Entrypoint Detection
+
+Check for existence of (in order):
+- `neurons/miner.py`
+- `miner/` directory (with Dockerfile or main.py/main.go)
+- `src/miner/`
+- `miner.py` at root
+
+### Difficulty Classification
+
+| Signals present | Difficulty |
+|----------------|-----------|
+| Open-source miner + min_compute.yml + clear README | `trivial` |
+| Open-source miner + some docs | `medium` |
+| No miner code OR miner requires custom model training | `hard` |
+| No repo found | `unknown` |
 
 ---
 
 ## Subnet Repo Mapping
 
-Many subnets don't have `repo_url` in their profile yet. Bootstrap with:
-1. Static JSON mapping file (`config/subnet_repos.json`) seeded from community knowledge
-2. On-chain metadata query (some subnets publish repo URL)
-3. Organic updates as we discover repos
+**POC finding**: Static mappings rot fast (38-56% stale). Must validate on every run.
 
-Start with top 30 by attractiveness score (highest value to research first).
+### Bootstrap Strategy
+1. Merge `nanlabs/subnet_links.json` (29 entries) + `awesome-bittensor` links (32 entries)
+2. Deduplicate and validate each URL (HEAD request)
+3. Store validated mapping in `config/subnet_repos.json` (checked into git as seed)
+4. At runtime, Lambda validates URL before fetching. On 404, marks repo as `stale`.
+
+### Self-Healing
+- If a known URL returns 404, try GitHub search: `org:{old_org} bittensor subnet {netuid}`
+- GitHub redirects renamed repos (301) — follow redirects and update mapping
+- DynamoDB caches validated URLs with `last_verified` timestamp
+- Monthly: re-verify all URLs, flag any that moved
+
+### Current Coverage (POC-validated, June 2026)
+- 13 repos confirmed accessible via GitHub API
+- 8/20 top-ranked subnets have known repos
+- Top 3 earners (SN44, SN95, SN51) have NO known public repo
 
 ---
 
 ## GitHub Rate Limiting Strategy
 
-- **Unauthenticated**: 60 requests/hour (covers ~20 subnets/hour at 3 req each)
-- **With token** (stored in Parameter Store): 5000 requests/hour (covers all 129 instantly)
-- **Circuit breaker**: If rate limited, back off. Discovery re-schedules on next hourly cycle.
-- **Caching**: Store raw repo content in S3. Only re-fetch if `Last-Modified` changed.
+- **Unauthenticated**: 60 requests/hour — **INSUFFICIENT** (POC burned through in one session)
+- **With PAT** (stored in Parameter Store at `/tao-pipeline/github-token`): 5000 req/hr ✅
+- **Circuit breaker**: If rate limited (403), back off. Discovery re-schedules on next hourly cycle.
+- **Caching**: Store raw repo content in S3. Only re-fetch if stale (>7 days).
+- **URL validation**: HEAD request before fetching content. Handle 404 gracefully.
+- **Requests per subnet**: ~5-8 (root listing + min_compute + Dockerfile + deps + README)
 
 ---
 

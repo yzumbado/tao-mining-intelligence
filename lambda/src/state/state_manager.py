@@ -569,6 +569,26 @@ class StateManager:
         except Exception:
             pass  # Non-critical — next briefing will just show all as new again
 
+    def store_research_profile(self, netuid: int, profile: dict) -> None:
+        """Store subnet research profile at SUBNET#{netuid}|RESEARCH#latest."""
+        from decimal import Decimal
+        try:
+            item = {
+                "PK": f"SUBNET#{netuid}",
+                "SK": "RESEARCH#latest",
+                **{k: v for k, v in profile.items()
+                   if v is not None and k != "gpu_signals"},
+            }
+            # DynamoDB can't store float — convert
+            if profile.get("vram_gb_estimate") is not None:
+                item["vram_gb_estimate"] = Decimal(str(profile["vram_gb_estimate"]))
+            # Store signals as string list
+            if profile.get("gpu_signals"):
+                item["gpu_signals"] = profile["gpu_signals"]
+            self._table.put_item(Item=item)
+        except Exception as e:
+            logger.warning(f"Failed to store research profile for SN{netuid}: {e}")
+
     def scan_basic_profiles(self) -> dict[int, dict]:
         """Scan all PROFILE#basic items. Returns {netuid: profile_dict}."""
         profiles: dict[int, dict] = {}
