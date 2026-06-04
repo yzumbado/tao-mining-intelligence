@@ -35,8 +35,7 @@ echo ""
 
 # Deploy
 echo "4/5 Deploying CDK stack..."
-cd cdk && npx cdk deploy --require-approval never 2>&1 | tail -10
-cd ..
+npx cdk deploy --require-approval never --profile tao --app ".venv/bin/python cdk/app.py" 2>&1 | tail -10
 echo ""
 
 # Post-deploy: quick RPC spot check (no 5-min wait needed for price)
