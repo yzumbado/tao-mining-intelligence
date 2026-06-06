@@ -165,8 +165,12 @@ lambda/src/
 │   └── handler.py         # ✅ Processor Lambda (metrics + profiles + hotkeys)
 ├── finalizer/
 │   └── handler.py         # ✅ Finalizer Lambda (briefing + ranking + site + conformance)
-└── site_generator/
-    └── generator.py       # ✅ Jinja2 HTML generation
+├── site_generator/
+│   └── generator.py       # ✅ Jinja2 HTML generation
+├── researcher/
+│   └── handler.py         # ✅ Stage 2 subnet repo research
+└── market_observer/
+    └── handler.py         # ✅ High-frequency cache + time-series (10-min cadence)
 ```
 
 ## What's Next (Post-Development)

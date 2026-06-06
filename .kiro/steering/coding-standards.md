@@ -126,8 +126,12 @@ lambda/src/
 │   └── handler.py         # Lambda handler (wires components)
 ├── finalizer/
 │   └── handler.py         # Lambda handler (briefing + ranking + site)
-└── site_generator/
-    └── generator.py       # Jinja2 HTML generation
+├── site_generator/
+│   └── generator.py       # Jinja2 HTML generation
+├── researcher/
+│   └── handler.py         # Stage 2: subnet repo research
+└── market_observer/
+    └── handler.py         # High-frequency cache + time-series (10-min cadence)
 ```
 
 ## Conventions

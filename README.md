@@ -105,7 +105,9 @@ Finalizer Lambda (aggregator, invoked after each subnet)
 │   │   ├── finalizer/        # Finalizer Lambda (aggregator)
 │   │   ├── state/            # DynamoDB state manager
 │   │   ├── storage/          # S3/local storage layer
-│   │   └── site_generator/   # HTML site generation
+│   │   ├── site_generator/   # HTML site generation
+│   │   ├── researcher/      # Stage 2: subnet repo research
+│   │   └── market_observer/ # High-frequency cache + time-series
 │   ├── templates/            # Jinja2 HTML templates
 │   ├── Dockerfile            # Lambda container image
 │   └── requirements.txt      # Pinned production dependencies
