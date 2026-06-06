@@ -1445,16 +1445,19 @@ class MetricsEngine:
             signals.append("single_validator")
 
         # Signal 3: Coldkey overlap between miners and validators (weight 0.25)
+        # Only suspicious if MAJORITY of validators share coldkeys with miners
         miner_coldkeys = {m.coldkey for m in earning_miners}
         validator_coldkeys = {v.coldkey for v in validators}
-        if miner_coldkeys and validator_coldkeys and miner_coldkeys & validator_coldkeys:
+        overlap = miner_coldkeys & validator_coldkeys
+        if overlap and len(overlap) >= len(validator_coldkeys) * 0.5:
             risk += 0.25
             signals.append("coldkey_overlap")
 
         # Signal 4: Low neuron diversity (weight 0.15)
+        # Only suspicious if extremely low (< 10%) — most subnets have 20-30% normally
         unique_coldkeys = len({n.coldkey for n in neurons})
         diversity = unique_coldkeys / len(neurons) if neurons else 1.0
-        if diversity < 0.3:
+        if diversity < 0.10:
             risk += 0.15
             signals.append("low_neuron_diversity")
 
