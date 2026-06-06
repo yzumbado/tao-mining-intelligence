@@ -598,6 +598,52 @@ class StateManager:
         except Exception as e:
             logger.warning(f"Failed to store research profile for SN{netuid}: {e}")
 
+    # =========================================================================
+    # Market Observer: Cache + History
+    # =========================================================================
+
+    def write_market_cache(self, netuid: int, data: dict) -> None:
+        """Write latest market data to cache (overwritten each observation)."""
+        from decimal import Decimal
+        try:
+            self._table.put_item(Item={
+                "PK": f"CACHE#{netuid}",
+                "SK": "MARKET_DATA",
+                "alpha_price": Decimal(str(data["alpha_price"])),
+                "pool_tao": Decimal(str(data["pool_tao"])),
+                "pool_alpha": Decimal(str(data["pool_alpha"])),
+                "block": data["block"],
+                "cached_at": data["cached_at"],
+            })
+        except Exception as e:
+            logger.warning(f"Cache write failed SN{netuid}: {e}")
+
+    def append_market_history(self, netuid: int, timestamp: str,
+                              data: dict, ttl_epoch: int) -> None:
+        """Append market observation to time-series history."""
+        from decimal import Decimal
+        try:
+            self._table.put_item(Item={
+                "PK": f"HISTORY#{netuid}",
+                "SK": timestamp,
+                "alpha_price": Decimal(str(data["alpha_price"])),
+                "pool_tao": Decimal(str(data["pool_tao"])),
+                "pool_alpha": Decimal(str(data["pool_alpha"])),
+                "block": data["block"],
+                "ttl": ttl_epoch,
+            })
+        except Exception as e:
+            logger.warning(f"History append failed SN{netuid}: {e}")
+
+    def get_market_cache(self, netuid: int) -> Optional[dict]:
+        """Read latest cached market data for a subnet."""
+        try:
+            resp = self._table.get_item(
+                Key={"PK": f"CACHE#{netuid}", "SK": "MARKET_DATA"})
+            return resp.get("Item")
+        except Exception:
+            return None
+
     def scan_basic_profiles(self) -> dict[int, dict]:
         """Scan all PROFILE#basic items. Returns {netuid: profile_dict}."""
         profiles: dict[int, dict] = {}

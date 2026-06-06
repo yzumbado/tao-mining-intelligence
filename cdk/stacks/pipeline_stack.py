@@ -346,6 +346,51 @@ class TaoPipelineStack(Stack):
         ))
 
         # =====================================================================
+        # Market Observer Lambda (10-min cache + history writer)
+        # =====================================================================
+        market_observer_fn = _lambda.DockerImageFunction(
+            self, "MarketObserverLambda",
+            function_name="tao-market-observer",
+            code=_lambda.DockerImageCode.from_image_asset(
+                directory=lambda_dir,
+                cmd=["src.market_observer.handler.handle"],
+                platform=ecr_assets.Platform.LINUX_ARM64,
+            ),
+            architecture=_lambda.Architecture.ARM_64,
+            memory_size=256,
+            timeout=Duration.seconds(120),
+            environment={
+                "PIPELINE_ENV": "aws",
+                "HOME": "/tmp",
+                "TABLE_NAME": table.table_name,
+            },
+            log_group=logs.LogGroup(self, "MarketObserverLogs",
+                                    retention=logs.RetentionDays.ONE_MONTH),
+        )
+        table.grant_read_write_data(market_observer_fn)
+        market_observer_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["cloudwatch:PutMetricData"],
+            resources=["*"],
+        ))
+
+        events.Rule(
+            self, "MarketObserverSchedule",
+            rule_name="tao-market-observer-10min",
+            schedule=events.Schedule.rate(Duration.minutes(10)),
+            targets=[targets.LambdaFunction(market_observer_fn)],
+        )
+
+        cloudwatch.Alarm(
+            self, "MarketObserverFailingAlarm",
+            alarm_name="tao-market-observer-failing",
+            metric=market_observer_fn.metric_errors(),
+            threshold=1,
+            evaluation_periods=3,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            treat_missing_data=cloudwatch.TreatMissingData.BREACHING,
+        )
+
+        # =====================================================================
         # IAM: Least Privilege
         # =====================================================================
         table.grant_read_write_data(subnet_collector_fn)
