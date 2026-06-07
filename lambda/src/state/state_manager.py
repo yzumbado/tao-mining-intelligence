@@ -612,6 +612,7 @@ class StateManager:
                 "alpha_price": Decimal(str(data["alpha_price"])),
                 "pool_tao": Decimal(str(data["pool_tao"])),
                 "pool_alpha": Decimal(str(data["pool_alpha"])),
+                "alpha_out": Decimal(str(data.get("alpha_out", 0))),
                 "block": data["block"],
                 "cached_at": data["cached_at"],
             })
@@ -629,6 +630,7 @@ class StateManager:
                 "alpha_price": Decimal(str(data["alpha_price"])),
                 "pool_tao": Decimal(str(data["pool_tao"])),
                 "pool_alpha": Decimal(str(data["pool_alpha"])),
+                "alpha_out": Decimal(str(data.get("alpha_out", 0))),
                 "block": data["block"],
                 "ttl": ttl_epoch,
             })
