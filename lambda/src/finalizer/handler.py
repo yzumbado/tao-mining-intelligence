@@ -115,6 +115,9 @@ def handle(event: dict, context: Any) -> dict:
         # Logs findings as structured JSON; does NOT block pipeline.
         _verify_outputs(rankings, briefing, all_metrics, date)
 
+        # Optionally trigger Strategizer (Stage 3) if enabled
+        _maybe_invoke_strategizer(date, cycle_id)
+
         ctx["rankings_count"] = len(rankings)
         ctx["alerts_count"] = len(briefing.get("alerts", []))
 
@@ -657,3 +660,33 @@ def _invalidate_cloudfront() -> None:
         )
     except Exception as e:
         logger.warning(f"CloudFront invalidation failed (non-critical): {e}")
+
+
+def _maybe_invoke_strategizer(date: str, cycle_id: str) -> None:
+    """Conditionally invoke Strategizer Lambda (Stage 3) after rankings update.
+
+    Controlled by threshold 'strategy_auto_refresh' (default: False).
+    Best-effort: failure does not affect Finalizer outcome.
+    """
+    if not _config.is_aws:
+        return
+
+    thresholds = _state_manager.get_thresholds()
+    if not thresholds.get("strategy_auto_refresh", False):
+        return
+
+    strategizer_arn = os.environ.get("STRATEGIZER_ARN", "")
+    if not strategizer_arn:
+        return
+
+    try:
+        lambda_client = boto3.client("lambda", region_name=_config.region)
+        lambda_client.invoke(
+            FunctionName=strategizer_arn,
+            InvocationType="Event",
+            Payload=json.dumps({"date": date, "cycle_id": cycle_id,
+                                "trigger": "finalizer"}).encode(),
+        )
+        logger.info("Strategizer invoked (async) after rankings update")
+    except Exception as e:
+        logger.warning(f"Failed to invoke Strategizer (best-effort): {e}")
