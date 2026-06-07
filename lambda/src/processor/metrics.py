@@ -1239,19 +1239,19 @@ class MetricsEngine:
 
     @staticmethod
     def compute_observed_apy(history: list[dict]) -> dict:
-        """Compute multi-window metrics from Market Observer history.
+        """Compute observed APY from Market Observer history using emission data.
 
-        Currently reports annualized net TAO flow (staker activity signal).
-        True observed yield requires per-validator emission tracking
-        (planned: add emission to Market Observer capture).
+        Uses delta(SubnetAlphaOut) between observations as the emission signal.
+        AlphaOut = total alpha emitted to all participants. Its growth rate
+        divided by pool_alpha gives the emission yield.
+
+        APY = (emission_per_day / avg_pool_alpha) * 365 * 100
 
         Args:
-            history: Market observations with 'SK', 'pool_tao', 'alpha_price'.
+            history: Market observations with 'SK', 'pool_alpha', 'alpha_out'.
 
         Returns:
-            Dict with apy_24h, apy_7d, apy_14d, apy_30d — annualized net
-            pool_tao flow percentage. Positive = inflow, negative = outflow.
-            None if insufficient data for the window.
+            Dict with apy_24h, apy_7d, apy_14d, apy_30d (percent or None).
         """
         from datetime import datetime, timezone, timedelta
 
@@ -1276,15 +1276,40 @@ class MetricsEngine:
             if len(obs) < 6:
                 continue
 
-            pool_taos = [float(h.get("pool_tao", 0)) for h in obs if float(h.get("pool_tao", 0)) > 0]
-            if len(pool_taos) < 2:
+            # Need alpha_out in the observations (added after initial deploy)
+            first_ao = float(obs[0].get("alpha_out", 0))
+            last_ao = float(obs[-1].get("alpha_out", 0))
+            if first_ao <= 0 or last_ao <= 0:
+                continue  # No emission data yet (pre-upgrade observations)
+
+            # Emission over the window
+            emission = last_ao - first_ao
+            if emission <= 0:
+                result[key] = 0.0
                 continue
 
-            # Annualized net flow: how fast is the pool growing/shrinking?
-            change_pct = (pool_taos[-1] - pool_taos[0]) / pool_taos[0]
-            days = window.total_seconds() / 86400
-            annualized = change_pct / days * 365 * 100
-            result[key] = round(max(min(annualized, 2000.0), -2000.0), 2)
+            # Average pool_alpha over the window (denominator)
+            pool_alphas = [float(h.get("pool_alpha", 0)) for h in obs if float(h.get("pool_alpha", 0)) > 0]
+            if not pool_alphas:
+                continue
+            avg_pool_alpha = sum(pool_alphas) / len(pool_alphas)
+
+            # Time span in days
+            try:
+                t_first = datetime.fromisoformat(obs[0]["SK"])
+                t_last = datetime.fromisoformat(obs[-1]["SK"])
+                days = (t_last - t_first).total_seconds() / 86400
+            except (ValueError, KeyError):
+                continue
+
+            if days < 0.5:
+                continue
+
+            # Emission rate per day, divided by pool size, annualized
+            emission_per_day = emission / days
+            daily_rate = emission_per_day / avg_pool_alpha
+            apr = daily_rate * 365 * 100
+            result[key] = round(min(apr, 2000.0), 2)
 
         return result
 

@@ -80,6 +80,9 @@ async def _observe_all(active_subnets: list[int]) -> dict:
                     pool_tao_raw = await sub.substrate.query(
                         "SubtensorModule", "SubnetTAO", [netuid])
                     pool_tao = int(pool_tao_raw) / 1e9 if pool_tao_raw else 0.0
+                    alpha_out_raw = await sub.substrate.query(
+                        "SubtensorModule", "SubnetAlphaOut", [netuid])
+                    alpha_out = int(alpha_out_raw) / 1e9 if alpha_out_raw else 0.0
 
                     if price <= 0 or pool_tao <= 0:
                         errors += 1
@@ -91,6 +94,7 @@ async def _observe_all(active_subnets: list[int]) -> dict:
                         "alpha_price": price,
                         "pool_tao": pool_tao,
                         "pool_alpha": pool_alpha,
+                        "alpha_out": alpha_out,
                         "block": block,
                         "cached_at": timestamp,
                     })
@@ -99,6 +103,7 @@ async def _observe_all(active_subnets: list[int]) -> dict:
                         "alpha_price": price,
                         "pool_tao": pool_tao,
                         "pool_alpha": pool_alpha,
+                        "alpha_out": alpha_out,
                         "block": block,
                     }, ttl_epoch)
 
