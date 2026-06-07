@@ -6,6 +6,27 @@ inclusion: always
 
 ## Development Workflow
 
+### Session Start (Agent Boot-Up)
+
+When starting a new session on this project:
+
+1. **Read handoff.md** (auto-loaded) — understand current stage, pending tasks, dead ends
+2. **Check production health**: `curl -s https://dkfh19zkgqq18.cloudfront.net/data/rankings.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{len(d)} subnets, max APY {max(r[\"real_apy_percent\"] for r in d):.0f}%')"`
+3. **Check git status**: `git -P log --oneline -5` — confirm you're on main, up to date
+4. **Ask the user what they want to work on** — don't assume from pending tasks
+
+### Session Close (Before Ending)
+
+Before ending a session:
+
+1. **Run tests**: `pytest tests/ -q` — must pass
+2. **Push all commits**: `git push` — nothing left local
+3. **Update handoff.md**: session findings, lessons learned, pending tasks
+4. **Verify docs match code**: if you changed a metric or architecture, update the relevant docs
+5. **Commit the handoff update** and push
+
+### Feature Development (When Building)
+
 When building a new feature or fixing a bug, follow this order:
 
 1. **POC against live chain** (5 min) — verify your assumptions about field values, API behavior, or formula correctness BEFORE writing production code
