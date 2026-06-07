@@ -244,19 +244,18 @@ lambda/src/
 
 #### Pending Tasks (next session):
 
-**P1 — Verify Post-Deploy (check after 4 hours):**
-- [ ] Run `python scripts/validate_all_metrics.py` — should pass (all subnets refreshed)
-- [ ] Verify SN44 APY ~80-100% (not 37%)
-- [ ] Verify APY overflow subnets = 0 (was 10)
-- [ ] Verify self-mining risk > 0 count dropped from 110 to ~20-30
+**P1 — APY Convergence (monitor):**
+- [ ] Verify all 129 subnets show APR < 3000% (simple formula deployed June 7)
+- [ ] Verify SN44 APR ~65% (was 91% compound, 37% before that)
 
-**P2 — Fix Briefing False Positives:**
-- [ ] Fix 129/129 "new subnet" alerts every run (Phase 4.1 of metrics validation epic)
+**P2 — Wire Cache Consumers (when needed):**
+- [ ] Market Observer cache has no readers yet — wire when building API or alerts
+- [ ] Consider price volatility metric from history (7+ days of data available)
 
 **P3 — Backlog:**
-- [ ] Label slippage as "upper bound (constant-product model)"
-- [ ] Update metrics-reference.md with "validated against" sources
-- [ ] Stage 2: RESEARCH (LLM-powered subnet researcher)
+- [ ] Stage 2 RESEARCH: LLM enrichment S3 drop-box (Phase 3 of research design)
+- [ ] Stage 3: STRATEGIZE design (given resources, which subnets to enter?)
+- [ ] Label slippage as "upper bound" in site HTML (done in JSON/schema, not in template)
 
 > **Previous sessions**: See `kb/session-history.md` for 2026-06-01 and earlier findings.
 

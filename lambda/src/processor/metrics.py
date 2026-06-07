@@ -1207,8 +1207,8 @@ class MetricsEngine:
             formula: |
                 pool_alpha = pool_tao_liquidity / alpha_price
                 daily_yield_rate = emission_daily / pool_alpha
-                apy = ((1 + daily_yield_rate)^365 - 1) × 100
-            output_range: "[0.0, ~2000%) — typically 50% to 500% for active subnets"
+                apr = daily_yield_rate × 365 × 100
+            output_range: "[0.0, ~3000%) — typically 30% to 300% for active subnets"
             known_issues: |
                 - Extrapolates one day to a year (volatile day = misleading APY)
                 - Alpha APY ≠ TAO APY (alpha price fluctuates)

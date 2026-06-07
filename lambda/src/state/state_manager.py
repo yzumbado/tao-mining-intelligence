@@ -643,7 +643,13 @@ class StateManager:
             return None
 
     def query_market_history(self, netuid: int, since_iso: str) -> list[dict]:
-        """Query market history observations since a given timestamp."""
+        """Query market history observations since a given timestamp.
+
+        NOTE: No current consumer (June 2026). Kept for future use:
+        - Price volatility calculation
+        - Net TAO flow taoflow metric
+        - Trend detection for alerts
+        """
         try:
             resp = self._table.query(
                 KeyConditionExpression="PK = :pk AND SK >= :since",

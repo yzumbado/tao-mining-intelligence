@@ -242,21 +242,21 @@ Check for existence of (in order):
 ## Implementation Tasks
 
 ### Phase 1: Core Researcher (1-2 days)
-- [ ] Create `config/subnet_repos.json` — seed top 30 subnet repo URLs
-- [ ] Create `lambda/src/researcher/handler.py` — single Lambda handler
-- [ ] Implement GitHub fetching (README, requirements.txt, Dockerfile)
-- [ ] Implement deterministic parsing heuristics
-- [ ] Implement compute cost estimation (GPU tier × pricing table)
-- [ ] Store RESEARCH#latest to DynamoDB
-- [ ] Store raw artifacts to S3
-- [ ] Self-schedule next run (7 days)
-- [ ] Add CDK: Lambda function, IAM permissions, EventBridge schedule
-- [ ] Write tests (property: output schema valid, unit: parsing heuristics)
+- [x] Create `config/subnet_repos.json` — seed top 30 subnet repo URLs
+- [x] Create `lambda/src/researcher/handler.py` — single Lambda handler
+- [x] Implement GitHub fetching (README, requirements.txt, Dockerfile)
+- [x] Implement deterministic parsing heuristics
+- [x] Implement compute cost estimation (GPU tier × pricing table)
+- [x] Store RESEARCH#latest to DynamoDB
+- [x] Store raw artifacts to S3
+- [x] Self-schedule next run (7 days)
+- [x] Add CDK: Lambda function, IAM permissions, EventBridge schedule
+- [x] Write tests (property: output schema valid, unit: parsing heuristics)
 
 ### Phase 2: Discovery Integration (half day)
-- [ ] Add research staleness check to existing Discovery Lambda
-- [ ] Add rank-change flag detection in Finalizer
-- [ ] Discovery schedules researcher for stale/flagged subnets
+- [x] Add research staleness check to existing Discovery Lambda
+- [x] Add rank-change flag detection in Finalizer
+- [x] Discovery schedules researcher for stale/flagged subnets
 
 ### Phase 3: LLM Enrichment Drop Box (half day)
 - [ ] Add S3 PUT for enrichment request at end of Researcher Lambda
