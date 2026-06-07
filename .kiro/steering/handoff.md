@@ -31,7 +31,7 @@ An autonomous pipeline that continuously collects Bittensor subnet data, compute
 
 **Long-term vision**: A 7-stage autonomous TAO machine that discovers opportunities, researches requirements, builds mining agents, tests strategies, deploys on-chain, and self-optimizes. See `kb/product-vision-roadmap.md` for the full roadmap.
 
-**Current stage**: Stage 1 (COLLECT) is complete and autonomous. Stage 2 (RESEARCH) is next.
+**Current stage**: Stage 1 (COLLECT) is complete and autonomous. Stage 2 (RESEARCH) is deployed and running. Market Observer (high-frequency cache) is live. Next meaningful work: Stage 3 (STRATEGIZE).
 
 ## Bittensor in 60 Seconds
 
@@ -48,6 +48,8 @@ Each subnet has its own **alpha token** (like an LP token) that trades against T
 
 The user (or Kiro agent) reads our `rankings.json` and makes decisions like:
 - "SN44 has 82% APY and low self-mining risk → stake 1000τ there"
+- "SN97 scores 0.0 (self-mining=1.0) → avoid, emissions will be blocked"
+- "SN9 yields 95τ/day but only 1 earning miner → extreme WTA, only enter if I can be top"
 - "SN97 scores 0.0 (self-mining=1.0) → avoid, emissions will be blocked"
 - "SN9 yields 95τ/day but only 1 earning miner → extreme WTA, only enter if I can be top"
 
@@ -137,6 +139,22 @@ The SubnetCollector is the completed reference for how Lambda handlers should be
 - `mg.AS` includes **consensus-locked alpha beyond the pool** — NOT pure staked alpha. For APY, use `pool_tao / alpha_price` as denominator.
 - `mg.S` is NOT just TAO stake — it's total effective weight (alpha + root-weighted TAO). `sum(mg.S) * price > TVL`.
 - `mg.TS` = `mg.S - mg.AS` (root TAO portion only), NOT total_stake = S + AS.
+
+## Dead Ends — Do NOT Repeat
+
+These approaches were tried and failed. Do not re-attempt without new evidence:
+
+1. **Compound APY annualization** — `(1+daily_rate)^365` explodes at daily rates >0.5%. Was adjusted 6 times with different thresholds (200%, 3%, 0.5%), always had edge cases. Final solution: simple APR (`rate × 365 × 100`). Never overflow, never needs a guard.
+
+2. **Observed APY from SubnetAlphaOut delta** — AlphaOut grows from BOTH emission AND staker inflow. Cannot isolate emission. Produces 38× overstated numbers. Tried and removed in June 2026.
+
+3. **bittensor.ai API** — Cloudflare-protected, returns challenge pages. Cannot scrape.
+
+4. **taostats API** — Requires paid Pro key. We use their documented methodology as reference but can't call their endpoints.
+
+5. **Static repo URL mappings as truth** — 38-56% go stale within months. Always validate URLs before fetching.
+
+6. **Market Observer cache as APY data source** — The cache stores price + pool_tao. This is NOT enough for APY (need emission, which comes from metagraph). APY correctly computed from Collector's metagraph snapshot.
 
 ## Code Structure
 
