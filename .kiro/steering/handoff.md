@@ -218,33 +218,33 @@ lambda/src/
 
 
 
-### Session 2026-06-04 Findings (context for next agent):
+### Session 2026-06-07 Findings (context for next agent):
 
 #### Major Accomplishments:
-- **Deployed all pending fixes to production** — APY formula, overflow guard, self-mining false positive fix, concentration_risk field. Stack UPDATE_COMPLETE at 17:15 UTC.
-- **Validation pipeline overhauled** — Hard deploy gate (blocks on failure), independent RPC spot check, deviation history with drift detection.
-- **Deploy script made end-to-end reliable** — Fixed 4 blockers: cdk.json path, python binary, AWS profile, Docker daemon.
-- **Test hygiene fixed** — Removed dual module loading (13 files migrated), killed standalone function divergence risk.
-- **Redundant scripts archived** — 6 validate scripts → 2 active (gate + spot check) + 4 archived.
-- **Validation runbook created** — kb/runbook-validation-deploy.md with prerequisites, failure investigation, convergence monitoring.
+- **APY formula finalized** — switched to simple APR (`daily_rate × 365 × 100`). No compound, no threshold, no overflow possible. Validated against all 129 live subnets: max 2787%, median 93%.
+- **Self-mining risk fixed** — tightened thresholds (diversity <10%, coldkey overlap ≥50% of validators). 98/129 false positives → 11/129 correctly flagged.
+- **Market Observer deployed and cleaned** — captures price + pool_tao every 10 min for all 129 subnets. Stripped dead alpha_out/pool_alpha fields.
+- **Stage 2 RESEARCH complete and deployed** — SubnetResearcher Lambda live, 22 repos mapped, CDK wired, Discovery staleness check working.
+- **Full audit completed** — all docs synced with code, stale tasks updated, dead code annotated.
 
-#### Lessons Learned (apply to future work):
-1. **Deploy script must be self-sufficient** — Don't assume Python, Docker, or AWS credentials are "just there". Check prerequisites or fail with clear messages.
-2. **Formula deploys need --skip-validation** — The validation gate compares live output vs chain. If the formula is the bug, the gate will always fail pre-deploy. This is expected, not broken.
-3. **Post-deploy convergence is NOT instant** — Subnets refresh on independent tempo schedules (20-240 min). Full convergence takes ~4 hours. Check metadata.json timestamps.
-4. **Colima must be running for CDK deploys** — Lambda uses container images. No Docker = no deploy. Add to prerequisites check.
-5. **Test-only code paths WILL diverge from production** — The standalone deregistration function masked a return-ordering difference for months. Always test the real code path.
-6. **Raw RPC is a better independent check than third-party APIs** — bittensor.ai is Cloudflare-protected. Substrate RPC is public, fast (2s), and gives ground truth through an independent code path.
+#### Key Lessons Learned (apply to future work):
+1. **Don't use compound annualization for yield that isn't auto-compounded.** Bittensor staking doesn't reinvest automatically. Simple APR is the honest number.
+2. **POC BEFORE building** — the "observed APY from Market Observer" effort (3 commits) was wasted because SubnetAlphaOut doesn't isolate emission from staker flow. A 5-minute POC would have caught this.
+3. **Threshold-based guards are whack-a-mole.** Edge cases always fall just below the threshold. Linear formulas that can't overflow are better than guarded exponential formulas.
+4. **Build consumers before infrastructure.** The Market Observer cache has zero readers. We built write-side first, but nothing benefits from it yet.
+5. **Static repo mappings rot fast.** 38-56% of community-maintained Bittensor repo links are dead within months. Always validate URLs on use.
 
-#### Deploy Prerequisites (document in all runbooks):
-- Colima running (`colima start`)
-- AWS profile `tao` configured (account 651484323929, us-east-1)
-- Python 3.12 venv active
-- Node.js/npx available for CDK
+#### Current Production State:
+- Pipeline: 129 subnets self-refreshing (avg 30 min freshness)
+- Market Observer: running every 10 min, accumulating price/pool history
+- Researcher: deployed, researches repos on 7-day cycle via Discovery
+- Rankings: live at https://dkfh19zkgqq18.cloudfront.net
+- Tests: 203 passing
+- Cost: $0/month (free tier)
 
 #### Pending Tasks (next session):
 
-**P1 — APY Convergence (monitor):**
+**P1 — APR Convergence (monitor):**
 - [ ] Verify all 129 subnets show APR < 3000% (simple formula deployed June 7)
 - [ ] Verify SN44 APR ~65% (was 91% compound, 37% before that)
 
