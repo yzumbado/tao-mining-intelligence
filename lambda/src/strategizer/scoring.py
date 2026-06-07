@@ -303,6 +303,7 @@ def _estimate_run_validator_yield(ranking: dict, profile: dict, tao_usd_price: f
     """Estimate daily TAO from running your own validator.
 
     Requires: server 24/7, subnet validator software, minimum viable stake.
+    Same alpha risk as delegation — yield is in alpha tokens, not TAO.
     """
     stake_available = profile.get("tao_available_stake", 0.0)
     max_positions = profile.get("max_positions", 3)
@@ -316,15 +317,28 @@ def _estimate_run_validator_yield(ranking: dict, profile: dict, tao_usd_price: f
         return 0.0
 
     # Gross yield from staking
-    daily_rate = ranking.get("real_apy_percent", 0.0) / 100.0 / 365.0
+    apy = ranking.get("real_apy_percent", 0.0)
+    daily_rate = apy / 100.0 / 365.0
     gross_daily = per_subnet_stake * daily_rate
+
+    # Alpha risk discount (same as delegate)
+    if apy <= 20:
+        alpha_discount = 0.90
+    elif apy <= 100:
+        alpha_discount = 0.70
+    elif apy <= 300:
+        alpha_discount = 0.50
+    else:
+        alpha_discount = 0.30
+
+    risk_adjusted = gross_daily * alpha_discount
 
     # Subtract server cost (converted to TAO)
     if tao_usd_price > 0:
         daily_server_cost_tao = (VALIDATOR_SERVER_MONTHLY_USD / 30.0) / tao_usd_price
-        net_daily = gross_daily - daily_server_cost_tao
+        net_daily = risk_adjusted - daily_server_cost_tao
     else:
-        net_daily = gross_daily
+        net_daily = risk_adjusted
 
     return max(0.0, net_daily)
 
@@ -333,7 +347,15 @@ def _estimate_delegate_yield(ranking: dict, profile: dict) -> float:
     """Estimate daily TAO from delegating to an existing validator.
 
     Truly passive: no software, no server, just stake.
-    Yield = APY * stake * (1 - commission).
+    Yield = APY * stake * (1 - commission) * alpha_risk_discount.
+
+    IMPORTANT: Subnet APY is denominated in alpha tokens, not TAO.
+    Alpha price can depreciate, wiping out yield. We apply a discount:
+    - Low APY (<20%): likely stable, 90% confidence
+    - Medium APY (20-100%): moderate risk, 70% confidence
+    - High APY (>100%): high alpha risk, 50% confidence
+    - Extreme APY (>300%): very high risk, 30% confidence
+    Root (SN0) at ~3% is the TAO-native baseline — everything above carries alpha risk.
     """
     stake_available = profile.get("tao_available_stake", 0.0)
     max_positions = profile.get("max_positions", 3)
@@ -341,12 +363,24 @@ def _estimate_delegate_yield(ranking: dict, profile: dict) -> float:
         return 0.0
 
     per_subnet_stake = stake_available / max(1, max_positions)
-    daily_rate = ranking.get("real_apy_percent", 0.0) / 100.0 / 365.0
+    apy = ranking.get("real_apy_percent", 0.0)
+    daily_rate = apy / 100.0 / 365.0
     gross_daily = per_subnet_stake * daily_rate
 
     # Deduct validator commission
-    net_daily = gross_daily * (1.0 - VALIDATOR_COMMISSION_RATE)
-    return max(0.0, net_daily)
+    after_commission = gross_daily * (1.0 - VALIDATOR_COMMISSION_RATE)
+
+    # Alpha risk discount (higher APY = less likely to sustain)
+    if apy <= 20:
+        alpha_discount = 0.90
+    elif apy <= 100:
+        alpha_discount = 0.70
+    elif apy <= 300:
+        alpha_discount = 0.50
+    else:
+        alpha_discount = 0.30
+
+    return max(0.0, after_commission * alpha_discount)
 
 
 def _estimate_entry_cost(
@@ -405,6 +439,15 @@ def _build_rationale(ranking: dict, research: dict, role: str, daily_tao: float,
         parts.append("elevated risk")
 
     if role == "delegate":
+        apy = ranking.get("real_apy_percent", 0.0)
+        if apy > 300:
+            parts.append("⚠️ EXTREME alpha risk (APY>300% rarely sustains)")
+        elif apy > 100:
+            parts.append("⚠️ HIGH alpha risk (yield in volatile alpha tokens)")
+        elif apy > 20:
+            parts.append("moderate alpha risk")
+        else:
+            parts.append("low alpha risk (near TAO-native yield)")
         parts.append("PASSIVE — just delegate, no software needed")
         parts.append(f"~{VALIDATOR_COMMISSION_RATE*100:.0f}% commission to validator")
     elif role == "run_validator":
