@@ -62,6 +62,11 @@ class SiteGenerator:
             last_updated="",
         )
 
+    def generate_strategy_page(self) -> str:
+        """Generate strategy.html — client-side interactive strategy dashboard."""
+        template = self._env.get_template("strategy.html")
+        return template.render(staleness_warning=False, last_updated="")
+
     @staticmethod
     def _check_staleness(last_updated: Optional[str]) -> bool:
         """Check if data is stale (>36h old)."""

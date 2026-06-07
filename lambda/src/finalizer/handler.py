@@ -624,6 +624,10 @@ def _upload_agent_files(rankings: list, briefing: dict,
             s3.put_object(Bucket=site_bucket, Key="briefing.html",
                           Body=briefing_html.encode(), ContentType="text/html",
                           CacheControl=cache_control)
+            strategy_html = gen.generate_strategy_page()
+            s3.put_object(Bucket=site_bucket, Key="strategy.html",
+                          Body=strategy_html.encode(), ContentType="text/html",
+                          CacheControl=cache_control)
         except Exception as e:
             logger.warning(f"HTML site generation failed (non-critical): {e}")
 

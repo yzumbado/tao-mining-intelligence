@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}Strategy Dashboard — TAO Intelligence{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold">Strategy Dashboard</h1>
+        <span class="text-sm text-gray-500" id="data-freshness"></span>
+    </div>
+
+    <!-- Profile Configuration -->
+    <div class="bg-[#161b22] border border-gray-700 rounded-lg p-6">
+        <h2 class="text-lg font-semibold mb-4">Your Profile</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">GPU Type</label>
+                <select id="gpu-type" class="w-full bg-[#0d1117] border border-gray-600 rounded px-3 py-2 text-sm">
+                    <option value="none">None (Validator Only)</option>
+                    <option value="RTX 4090">RTX 4090 (24GB)</option>
+                    <option value="RTX 3090">RTX 3090 (24GB)</option>
+                    <option value="A6000">A6000 (48GB)</option>
+                    <option value="A100">A100 (80GB)</option>
+                    <option value="H100">H100 (80GB)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">TAO for Staking</label>
+                <input type="number" id="tao-stake" value="100" min="0" step="10"
+                    class="w-full bg-[#0d1117] border border-gray-600 rounded px-3 py-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">TAO for Registration</label>
+                <input type="number" id="tao-reg" value="1" min="0" step="0.1"
+                    class="w-full bg-[#0d1117] border border-gray-600 rounded px-3 py-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Risk Tolerance</label>
+                <select id="risk-tolerance" class="w-full bg-[#0d1117] border border-gray-600 rounded px-3 py-2 text-sm">
+                    <option value="conservative">Conservative</option>
+                    <option value="moderate" selected>Moderate</option>
+                    <option value="aggressive">Aggressive</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Max Positions</label>
+                <input type="number" id="max-positions" value="3" min="1" max="10"
+                    class="w-full bg-[#0d1117] border border-gray-600 rounded px-3 py-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Prefer Passive</label>
+                <select id="prefer-passive" class="w-full bg-[#0d1117] border border-gray-600 rounded px-3 py-2 text-sm">
+                    <option value="true" selected>Yes — prefer validating</option>
+                    <option value="false">No — maximize yield</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Min Pool Liquidity (τ)</label>
+                <input type="number" id="min-liquidity" value="500" min="0" step="100"
+                    class="w-full bg-[#0d1117] border border-gray-600 rounded px-3 py-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">TAO/USD Price</label>
+                <input type="number" id="tao-price" value="260" min="1" step="10"
+                    class="w-full bg-[#0d1117] border border-gray-600 rounded px-3 py-2 text-sm">
+            </div>
+        </div>
+        <button onclick="runStrategy()" class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded text-sm">
+            Generate Strategy
+        </button>
+    </div>
+
+    <!-- Portfolio Summary -->
+    <div id="portfolio-summary" class="hidden bg-[#161b22] border border-gray-700 rounded-lg p-6">
+        <h2 class="text-lg font-semibold mb-3">Portfolio Summary</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center" id="summary-grid"></div>
+    </div>
+
+    <!-- Recommendations -->
+    <div id="recommendations" class="hidden">
+        <h2 class="text-lg font-semibold mb-3">Recommendations</h2>
+        <div class="space-y-3" id="rec-list"></div>
+    </div>
+
+    <!-- Do Nothing -->
+    <div id="do-nothing" class="hidden bg-yellow-900/20 border border-yellow-700 rounded-lg p-4">
+        <p class="text-yellow-300 font-medium" id="do-nothing-text"></p>
+    </div>
+
+    <!-- Filter Summary -->
+    <div id="filter-summary" class="hidden bg-[#161b22] border border-gray-700 rounded-lg p-4">
+        <h3 class="text-sm font-medium text-gray-400 mb-2">Filtering: <span id="filter-count"></span></h3>
+        <div class="flex flex-wrap gap-2" id="filter-tags"></div>
+    </div>
+</div>
+
+<script>
+const GPU_VRAM = {"RTX 4090": 24, "RTX 3090": 24, "A6000": 48, "A100": 80, "H100": 80};
+const GPU_COST_MONTHLY = {"RTX 4090": 250, "RTX 3090": 150, "A6000": 500, "A100": 1000, "H100": 2000};
+
+let rankingsData = [];
+
+async function loadData() {
+    try {
+        const resp = await fetch('/data/rankings.json');
+        rankingsData = await resp.json();
+        document.getElementById('data-freshness').textContent = `${rankingsData.length} subnets loaded`;
+    } catch(e) {
+        document.getElementById('data-freshness').textContent = '⚠ Failed to load rankings';
+    }
+}
+
+function getProfile() {
+    const gpuType = document.getElementById('gpu-type').value;
+    return {
+        hardware: gpuType === 'none' ? [] : [{type: gpuType, vram_gb: GPU_VRAM[gpuType]}],
+        tao_available_stake: parseFloat(document.getElementById('tao-stake').value) || 0,
+        tao_available_registration: parseFloat(document.getElementById('tao-reg').value) || 0,
+        risk_tolerance: document.getElementById('risk-tolerance').value,
+        max_positions: parseInt(document.getElementById('max-positions').value) || 3,
+        prefer_passive: document.getElementById('prefer-passive').value === 'true',
+        min_pool_liquidity_tao: parseFloat(document.getElementById('min-liquidity').value) || 500,
+    };
+}
+
+function filterSubnets(rankings, profile) {
+    const survivors = [];
+    const reasons = {};
+    for (const r of rankings) {
+        // Self-mining risk
+        if (r.self_mining_risk > 0 && profile.risk_tolerance !== 'aggressive') {
+            reasons['self_mining_risk'] = (reasons['self_mining_risk'] || 0) + 1;
+            continue;
+        }
+        // Concentration risk
+        const concTier = r.concentration_risk?.tier || 'healthy';
+        if (concTier === 'critical' && profile.risk_tolerance === 'conservative') {
+            reasons['concentration_risk'] = (reasons['concentration_risk'] || 0) + 1;
+            continue;
+        }
+        survivors.push(r);
+    }
+    return {survivors, reasons};
+}
+
+function scoreSubnet(r, profile, maxYield, taoPrice) {
+    // Yield score
+    const yieldScore = maxYield > 0 ? Math.min(1, r.net_tao_yield / maxYield) : 0;
+
+    // Risk score
+    const concRisk = r.concentration_risk?.risk || 0;
+    const instability = Math.min(1, Math.abs(r.emission_trend || 0) * 1000);
+    const liqRisk = r.alpha_price > 0.1 ? 0 : (r.alpha_price > 0.01 ? 0.5 : 1.0);
+    const riskScore = Math.max(0, 1 - (r.self_mining_risk * 0.3 + concRisk * 0.3 + instability * 0.2 + liqRisk * 0.2));
+
+    // Accessibility (without research data, use moderate default)
+    const accessScore = 0.6;
+
+    // Validating yield
+    const perSubnetStake = profile.tao_available_stake / Math.max(1, profile.max_positions);
+    const dailyRate = (r.real_apy_percent || 0) / 100 / 365;
+    const valYield = perSubnetStake * dailyRate;
+
+    // Mining yield (simplified — no research data in client)
+    let mineYield = 0;
+    if (profile.hardware.length > 0) {
+        const density = r.competitive_density || 0.1;
+        const isWta = density < 0.01;
+        if (!isWta) {
+            const miners = Math.max(1, Math.round(1 / Math.max(density, 0.001)));
+            const gpuType = profile.hardware[0].type;
+            const dailyCost = (GPU_COST_MONTHLY[gpuType] || 300) / 30 / taoPrice;
+            mineYield = Math.max(0, (r.net_tao_yield / miners) - dailyCost);
+        }
+    }
+
+    // Role decision
+    let role, expectedDaily;
+    if (profile.prefer_passive && valYield >= mineYield * 0.8) {
+        role = 'validate'; expectedDaily = valYield;
+    } else if (mineYield > valYield) {
+        role = 'mine'; expectedDaily = mineYield;
+    } else {
+        role = 'validate'; expectedDaily = valYield;
+    }
+
+    // Entry cost
+    const regCost = 0.5;
+    const hwCost = role === 'mine' && profile.hardware.length > 0
+        ? (GPU_COST_MONTHLY[profile.hardware[0].type] || 300) / taoPrice : 0;
+    const entryCost = regCost + hwCost;
+
+    // Efficiency
+    const effScore = Math.min(1, expectedDaily / Math.max(entryCost, 0.01) / 0.5);
+
+    const fitness = yieldScore * 0.4 + riskScore * 0.25 + accessScore * 0.2 + effScore * 0.15;
+
+    return {
+        netuid: r.netuid, role, fitness: Math.round(fitness * 1000) / 1000,
+        expectedDaily: Math.round(expectedDaily * 10000) / 10000,
+        expectedMonthly: Math.round(expectedDaily * 30 * 100) / 100,
+        entryCost: Math.round(entryCost * 100) / 100,
+        allocatedStake: role === 'validate' ? Math.round(perSubnetStake * 100) / 100 : 0,
+        apy: r.real_apy_percent, riskScore, yieldScore,
+        scores: {yield: yieldScore.toFixed(2), risk: riskScore.toFixed(2), access: accessScore.toFixed(2), efficiency: effScore.toFixed(2)},
+    };
+}
+
+function runStrategy() {
+    if (!rankingsData.length) return;
+    const profile = getProfile();
+    const taoPrice = parseFloat(document.getElementById('tao-price').value) || 260;
+
+    // Filter
+    const {survivors, reasons} = filterSubnets(rankingsData, profile);
+
+    // Score
+    const maxYield = Math.max(...survivors.map(r => r.net_tao_yield || 0), 1);
+    let scored = survivors.map(r => scoreSubnet(r, profile, maxYield, taoPrice));
+    scored.sort((a, b) => b.fitness - a.fitness);
+
+    // Portfolio optimize (greedy)
+    const recs = [];
+    let usedStake = 0;
+    const minFitness = 0.3;
+    for (const s of scored) {
+        if (recs.length >= profile.max_positions) break;
+        if (s.fitness < minFitness) break;
+        if (s.role === 'validate' && usedStake + s.allocatedStake > profile.tao_available_stake) continue;
+        if (s.role === 'validate') usedStake += s.allocatedStake;
+        recs.push(s);
+    }
+
+    // Render
+    renderResults(recs, reasons, survivors.length, profile);
+}
+
+function renderResults(recs, reasons, survivorCount, profile) {
+    const totalFiltered = rankingsData.length - survivorCount;
+
+    // Filter summary
+    const filterEl = document.getElementById('filter-summary');
+    filterEl.classList.remove('hidden');
+    document.getElementById('filter-count').textContent =
+        `${rankingsData.length} → ${survivorCount} subnets (${totalFiltered} filtered)`;
+    const tagsEl = document.getElementById('filter-tags');
+    tagsEl.innerHTML = Object.entries(reasons).map(([k, v]) =>
+        `<span class="bg-gray-700 text-gray-300 px-2 py-0.5 rounded text-xs">${k}: ${v}</span>`
+    ).join('');
+
+    if (!recs.length) {
+        document.getElementById('recommendations').classList.add('hidden');
+        document.getElementById('portfolio-summary').classList.add('hidden');
+        document.getElementById('do-nothing').classList.remove('hidden');
+        document.getElementById('do-nothing-text').textContent =
+            'No opportunity exceeds minimum fitness threshold (0.3). Consider increasing risk tolerance or TAO budget.';
+        return;
+    }
+
+    document.getElementById('do-nothing').classList.add('hidden');
+
+    // Portfolio summary
+    const sumEl = document.getElementById('portfolio-summary');
+    sumEl.classList.remove('hidden');
+    const totalDaily = recs.reduce((s, r) => s + r.expectedDaily, 0);
+    const totalStake = recs.reduce((s, r) => s + r.allocatedStake, 0);
+    document.getElementById('summary-grid').innerHTML = `
+        <div><div class="text-2xl font-bold text-green-400">${totalDaily.toFixed(2)}τ</div><div class="text-xs text-gray-500">Daily yield</div></div>
+        <div><div class="text-2xl font-bold text-blue-400">${(totalDaily*30).toFixed(1)}τ</div><div class="text-xs text-gray-500">Monthly projection</div></div>
+        <div><div class="text-2xl font-bold text-purple-400">${totalStake.toFixed(0)}τ</div><div class="text-xs text-gray-500">Stake allocated</div></div>
+        <div><div class="text-2xl font-bold text-yellow-400">${recs.length}</div><div class="text-xs text-gray-500">Positions</div></div>
+    `;
+
+    // Recommendations
+    const recEl = document.getElementById('recommendations');
+    recEl.classList.remove('hidden');
+    document.getElementById('rec-list').innerHTML = recs.map((r, i) => `
+        <div class="bg-[#161b22] border border-gray-700 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-3">
+                    <span class="bg-gray-700 text-white font-bold rounded-full w-7 h-7 flex items-center justify-center text-sm">${i+1}</span>
+                    <span class="font-semibold text-white">SN${r.netuid}</span>
+                    <span class="px-2 py-0.5 rounded text-xs font-medium ${r.role === 'validate' ? 'bg-blue-900 text-blue-300' : 'bg-orange-900 text-orange-300'}">${r.role.toUpperCase()}</span>
+                </div>
+                <span class="text-sm font-mono text-green-400">${r.expectedDaily.toFixed(3)}τ/day</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs text-gray-400">
+                <div>Fitness: <span class="text-white">${r.fitness}</span></div>
+                <div>APY: <span class="text-white">${r.apy.toFixed(0)}%</span></div>
+                <div>Monthly: <span class="text-white">${r.expectedMonthly}τ</span></div>
+                <div>Entry: <span class="text-white">${r.entryCost}τ</span></div>
+                <div>Stake: <span class="text-white">${r.allocatedStake}τ</span></div>
+            </div>
+            <div class="mt-2 flex gap-2 text-xs">
+                <span class="text-gray-500">Y:${r.scores.yield}</span>
+                <span class="text-gray-500">R:${r.scores.risk}</span>
+                <span class="text-gray-500">A:${r.scores.access}</span>
+                <span class="text-gray-500">E:${r.scores.efficiency}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+loadData();
+</script>
+{% endblock %}

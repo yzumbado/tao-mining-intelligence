@@ -206,6 +206,7 @@ class TestNavLinkResolution:
         "/index.html",
         "/rankings.html",
         "/briefing.html",
+        "/strategy.html",
         "/data/rankings.json",
         "/data/briefing.json",
         "/data/metadata.json",
