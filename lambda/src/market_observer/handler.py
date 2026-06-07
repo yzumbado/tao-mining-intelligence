@@ -1,17 +1,16 @@
-"""Market Observer Lambda — high-frequency cache + time-series writer.
+"""Market Observer Lambda — high-frequency price + liquidity cache and time-series.
 
 Runs every 10 minutes via EventBridge. For each active subnet:
-1. Queries chain via bittensor AsyncSubtensor (same as Collector — proven at scale)
-2. Writes latest market data to DynamoDB cache (CACHE#{netuid}|MARKET_DATA)
+1. Queries chain via bittensor AsyncSubtensor (persistent websocket)
+2. Writes latest price + pool_tao to DynamoDB cache (CACHE#{netuid}|MARKET_DATA)
 3. Appends observation to DynamoDB history (HISTORY#{netuid}|{timestamp})
 
-The cache serves other Lambdas needing current price/pool data.
-The history enables observed APY calculation (vs single-point extrapolation).
+Cache: serves other Lambdas needing current market data without chain calls.
+History: enables price volatility and net TAO flow analysis over time windows.
 """
 
 import asyncio
 import logging
-import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -80,21 +79,14 @@ async def _observe_all(active_subnets: list[int]) -> dict:
                     pool_tao_raw = await sub.substrate.query(
                         "SubtensorModule", "SubnetTAO", [netuid])
                     pool_tao = int(pool_tao_raw) / 1e9 if pool_tao_raw else 0.0
-                    alpha_out_raw = await sub.substrate.query(
-                        "SubtensorModule", "SubnetAlphaOut", [netuid])
-                    alpha_out = int(alpha_out_raw) / 1e9 if alpha_out_raw else 0.0
 
                     if price <= 0 or pool_tao <= 0:
                         errors += 1
                         continue
 
-                    pool_alpha = pool_tao / price
-
                     _state_manager.write_market_cache(netuid, {
                         "alpha_price": price,
                         "pool_tao": pool_tao,
-                        "pool_alpha": pool_alpha,
-                        "alpha_out": alpha_out,
                         "block": block,
                         "cached_at": timestamp,
                     })
@@ -102,8 +94,6 @@ async def _observe_all(active_subnets: list[int]) -> dict:
                     _state_manager.append_market_history(netuid, timestamp, {
                         "alpha_price": price,
                         "pool_tao": pool_tao,
-                        "pool_alpha": pool_alpha,
-                        "alpha_out": alpha_out,
                         "block": block,
                     }, ttl_epoch)
 
