@@ -180,12 +180,19 @@ def _load_user_profile() -> dict:
 
 
 def _load_rankings() -> list[dict]:
-    """Load current rankings from S3."""
+    """Load current rankings from S3 (site bucket — always current)."""
+    import os
     try:
-        data = _storage.read_snapshot("derived/rankings/latest.json")
+        s3 = boto3.client("s3", region_name=_config.region)
+        site_bucket = os.environ.get("SITE_BUCKET_NAME", "")
+        if site_bucket:
+            resp = s3.get_object(Bucket=site_bucket, Key="data/rankings.json")
+            data = json.loads(resp["Body"].read())
+        else:
+            # Fallback: read from data bucket (date-keyed)
+            data = _storage.read_snapshot("derived/rankings/latest.json")
         if isinstance(data, list):
             return data
-        # May be wrapped in a dict
         return data.get("rankings", data) if isinstance(data, dict) else []
     except Exception as e:
         logger.error(f"Failed to load rankings: {e}")

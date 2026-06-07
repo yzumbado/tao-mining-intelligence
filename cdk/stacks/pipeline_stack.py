@@ -409,12 +409,14 @@ class TaoPipelineStack(Stack):
                 "HOME": "/tmp",
                 "TABLE_NAME": table.table_name,
                 "BUCKET_NAME": data_bucket.bucket_name,
+                "SITE_BUCKET_NAME": site_bucket.bucket_name,
             },
             log_group=logs.LogGroup(self, "StrategizerLogs",
                                     retention=logs.RetentionDays.ONE_MONTH),
         )
         table.grant_read_write_data(strategizer_fn)
         data_bucket.grant_read_write(strategizer_fn)
+        site_bucket.grant_read(strategizer_fn)
 
         # Finalizer can invoke Strategizer (async, controlled by threshold)
         finalizer_fn.add_environment("STRATEGIZER_ARN", strategizer_fn.function_arn)
