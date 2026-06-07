@@ -644,6 +644,20 @@ class StateManager:
         except Exception:
             return None
 
+    def query_market_history(self, netuid: int, since_iso: str) -> list[dict]:
+        """Query market history observations since a given timestamp."""
+        try:
+            resp = self._table.query(
+                KeyConditionExpression="PK = :pk AND SK >= :since",
+                ExpressionAttributeValues={
+                    ":pk": f"HISTORY#{netuid}",
+                    ":since": since_iso,
+                },
+            )
+            return resp.get("Items", [])
+        except Exception:
+            return []
+
     def scan_basic_profiles(self) -> dict[int, dict]:
         """Scan all PROFILE#basic items. Returns {netuid: profile_dict}."""
         profiles: dict[int, dict] = {}

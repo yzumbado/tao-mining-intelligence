@@ -1234,6 +1234,85 @@ class MetricsEngine:
         return ((1.0 + daily_yield_rate) ** 365 - 1) * 100.0
 
     # =========================================================================
+    # Observed APY (multi-window, from Market Observer history)
+    # =========================================================================
+
+    @staticmethod
+    def compute_observed_apy(history: list[dict]) -> dict:
+        """Compute observed APY across multiple time windows from real data.
+
+        Uses pool_alpha growth between observations as the yield signal.
+        Returns null for windows without sufficient data.
+
+        Args:
+            history: List of market observations sorted by timestamp,
+                     each with 'SK' (timestamp) and 'pool_alpha' fields.
+
+        Returns:
+            Dict with apy_24h, apy_7d, apy_14d, apy_30d (percent or None).
+        """
+        from datetime import datetime, timezone, timedelta
+
+        result = {
+            "apy_24h": None,
+            "apy_7d": None,
+            "apy_14d": None,
+            "apy_30d": None,
+        }
+
+        if len(history) < 2:
+            return result
+
+        now = datetime.now(timezone.utc)
+        windows = [
+            ("apy_24h", timedelta(hours=24)),
+            ("apy_7d", timedelta(days=7)),
+            ("apy_14d", timedelta(days=14)),
+            ("apy_30d", timedelta(days=30)),
+        ]
+
+        # Sort by timestamp
+        sorted_hist = sorted(history, key=lambda x: x.get("SK", ""))
+        newest = sorted_hist[-1]
+        newest_alpha = float(newest.get("pool_alpha", 0))
+
+        if newest_alpha <= 0:
+            return result
+
+        for key, window in windows:
+            cutoff = (now - window).isoformat()
+            # Find oldest observation within this window
+            window_obs = [h for h in sorted_hist if h.get("SK", "") >= cutoff]
+            if len(window_obs) < 2:
+                continue
+
+            oldest = window_obs[0]
+            oldest_alpha = float(oldest.get("pool_alpha", 0))
+
+            if oldest_alpha <= 0:
+                continue
+
+            # Growth over the window
+            growth = (newest_alpha - oldest_alpha) / oldest_alpha
+
+            # Time span in days
+            try:
+                t_oldest = datetime.fromisoformat(oldest["SK"])
+                t_newest = datetime.fromisoformat(newest["SK"])
+                days = (t_newest - t_oldest).total_seconds() / 86400
+            except (ValueError, KeyError):
+                continue
+
+            if days < 0.5:  # Need at least 12h of data
+                continue
+
+            # Annualize: simple (growth/days * 365)
+            apr = (growth / days) * 365 * 100
+            result[key] = round(min(apr, 2000.0), 2)  # Cap at 2000%
+
+        return result
+
+    # =========================================================================
     # Net TAO Flow (30-day EMA)
     # =========================================================================
 

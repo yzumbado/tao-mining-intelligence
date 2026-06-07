@@ -163,6 +163,12 @@ def handle(event: dict, context: Any) -> dict:
             total_val_emission, pool_tao, alpha_price)
         metrics_computed.append("real_apy")
 
+        # Observed APY from Market Observer history (multi-window)
+        history_since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        history = _state_manager.query_market_history(netuid, history_since)
+        observed_apy = MetricsEngine.compute_observed_apy(history)
+        metrics_computed.append("observed_apy")
+
         # Validator concentration risk (standalone metric for staking decisions)
         concentration_risk = MetricsEngine.compute_validator_concentration_risk(
             validator_landscape.active_validators, validator_landscape.top_1_stake_share)
@@ -183,6 +189,7 @@ def handle(event: dict, context: Any) -> dict:
             self_mining_risk=self_mining_risk,
             concentration_risk=concentration_risk,
             real_apy=real_apy,
+            observed_apy=observed_apy,
             pool_tao_liquidity=pool_tao,
             source_block_number=current_block)
         _storage.store_snapshot(
@@ -355,6 +362,7 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                           self_mining_risk: Optional[dict] = None,
                           concentration_risk: Optional[dict] = None,
                           real_apy: float = 0.0,
+                          observed_apy: Optional[dict] = None,
                           pool_tao_liquidity: float = 0.0,
                           source_block_number: int = 0) -> dict:
     """Build the derived metrics JSON structure for S3 storage."""
@@ -422,6 +430,7 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
             "self_mining_risk": self_mining_risk or {"risk_score": 0.0, "signals": []},
             "concentration_risk": concentration_risk or {"risk": 0.0, "tier": "healthy"},
             "real_apy_percent": real_apy,
+            "observed_apy": observed_apy or {"apy_24h": None, "apy_7d": None, "apy_14d": None, "apy_30d": None},
         },
     }
 
