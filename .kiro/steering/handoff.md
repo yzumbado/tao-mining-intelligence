@@ -33,6 +33,18 @@ An autonomous pipeline that continuously collects Bittensor subnet data, compute
 
 **Current stage**: Stage 1 (COLLECT) is complete and autonomous. Stage 2 (RESEARCH) is deployed and running. Market Observer (high-frequency cache) is live. Next meaningful work: Stage 3 (STRATEGIZE).
 
+**Stage summary** (see `kb/product-vision-roadmap.md` for full detail):
+```
+Stage 1: COLLECT    ✅   — on-chain data, metrics, rankings (self-refreshing every 20-240 min)
+Stage 2: RESEARCH   ✅   — GitHub repo analysis, hardware requirements (7-day cycle)
+       + Market Observer — price + pool_tao every 10 min (accumulating data, no consumers yet)
+Stage 3: STRATEGIZE ← NEXT — given my resources, which subnets to enter?
+Stage 4: BUILD             — generate/adapt mining agents
+Stage 5: TEST              — simulate before risking TAO
+Stage 6: DEPLOY            — register on-chain, deploy compute
+Stage 7: OPTIMIZE          — compare actual vs predicted, self-improve
+```
+
 ## Bittensor in 60 Seconds
 
 Bittensor is a decentralized network where ~129 **subnets** compete for TAO tokens (like ETH for Ethereum). Each subnet is a marketplace for a specific AI task — computer vision, LLM inference, data storage, etc. Two roles:
@@ -285,7 +297,7 @@ lambda/src/
 # If setting up fresh: /opt/homebrew/bin/python3.12 -m venv .venv
 
 source .venv/bin/activate
-.venv/bin/pytest tests/ -v          # All 205 tests
+.venv/bin/pytest tests/ -v          # All 203 tests
 .venv/bin/pytest tests/properties/  # Property tests only
 .venv/bin/pytest tests/unit/        # Unit tests only
 .venv/bin/pytest tests/integration/ # E2E integration
@@ -293,4 +305,6 @@ source .venv/bin/activate
 python scripts/validate_all_metrics.py  # Cross-provider validation gate (needs internet)
 python scripts/test_e2e_local.py    # Live chain test (needs internet)
 ```
+
+**To deploy**: See `kb/runbook-validation-deploy.md` for full deploy flow, prerequisites, and troubleshooting. Quick: `./scripts/deploy.sh` (checks prereqs, runs tests, validates, deploys CDK).
 
