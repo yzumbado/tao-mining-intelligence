@@ -27,6 +27,12 @@ DEFAULT_WEIGHTS = {
 }
 
 
+# Validator server costs (monthly USD)
+VALIDATOR_SERVER_MONTHLY_USD: float = 100.0  # Typical VPS with optional GPU for validator
+VALIDATOR_COMMISSION_RATE: float = 0.18  # Typical validator commission (18%)
+MIN_VIABLE_VALIDATOR_STAKE_TAO: float = 500.0  # Below this, server costs > earnings
+
+
 def filter_opportunities(
     rankings: list[dict],
     research_profiles: dict[int, dict],
@@ -42,21 +48,14 @@ def filter_opportunities(
 
     excluded = set(profile.get("excluded_subnets", []))
     risk_tolerance = profile.get("risk_tolerance", "conservative")
-    min_liquidity = profile.get("min_pool_liquidity_tao", 500.0)
-    reg_budget = profile.get("tao_available_registration", 1.0)
 
     for r in rankings:
         netuid = r["netuid"]
-        research = research_profiles.get(netuid, {})
 
         # Excluded list
         if netuid in excluded:
             reasons["excluded_by_user"] = reasons.get("excluded_by_user", 0) + 1
             continue
-
-        # Registration cost check (use days_to_recoup as proxy — if 0, reg is free/trivial)
-        # We don't have reg_cost in rankings directly, skip if we can't afford
-        # For now pass through — optimizer handles capital constraint
 
         # Self-mining risk
         self_mining = r.get("self_mining_risk", 0.0)
@@ -70,13 +69,6 @@ def filter_opportunities(
         if conc_tier == "critical" and risk_tolerance == "conservative":
             reasons["concentration_risk"] = reasons.get("concentration_risk", 0) + 1
             continue
-
-        # Research confidence — no data at all? Skip for mining, but keep for validation
-        confidence = research.get("research_confidence", "none")
-        difficulty = research.get("difficulty", "unknown")
-        if confidence == "none" and difficulty == "unknown" and not research:
-            # No research at all — still valid for validation, keep it
-            pass
 
         survivors.append(r)
 
@@ -92,9 +84,10 @@ def score_opportunity(
     tao_usd_price: float,
     thresholds: dict,
 ) -> dict:
-    """Score a single subnet as both mine and validate, return best option.
+    """Score a single subnet across all three roles, return best option.
 
-    Returns dict with: netuid, role, fitness_score, expected_daily_tao, scores breakdown, rationale.
+    Roles: mine, run_validator, delegate.
+    Returns dict with: netuid, role, fitness_score, expected_daily_tao, scores, rationale.
     """
     weights = {
         "yield": thresholds.get("strategy_weight_yield", DEFAULT_WEIGHTS["strategy_weight_yield"]),
@@ -108,20 +101,32 @@ def score_opportunity(
     yield_score = _score_yield(ranking, max_yield)
     risk_score = _score_risk(ranking)
     accessibility_score = _score_accessibility(research)
-    mining_yield = _estimate_mining_yield(ranking, research, profile, tao_usd_price)
-    validating_yield = _estimate_validating_yield(ranking, profile)
 
-    # Determine role
-    prefer_passive = profile.get("prefer_passive", True)
-    if prefer_passive and validating_yield >= mining_yield * passive_ratio:
-        role = "validate"
-        expected_daily = validating_yield
-    elif mining_yield > validating_yield:
-        role = "mine"
-        expected_daily = mining_yield
+    # Estimate yields for all three roles
+    mining_yield = _estimate_mining_yield(ranking, research, profile, tao_usd_price)
+    validator_yield = _estimate_run_validator_yield(ranking, profile, tao_usd_price)
+    delegate_yield = _estimate_delegate_yield(ranking, profile)
+
+    # Pick best role
+    yields = {"mine": mining_yield, "run_validator": validator_yield, "delegate": delegate_yield}
+
+    # Prefer passive (delegate) if it's close enough
+    if profile.get("prefer_passive", True):
+        best_active = max(mining_yield, validator_yield)
+        if delegate_yield >= best_active * passive_ratio and delegate_yield > 0:
+            role = "delegate"
+        elif validator_yield >= mining_yield * passive_ratio and validator_yield > 0:
+            role = "run_validator"
+        elif mining_yield > 0:
+            role = "mine"
+        elif validator_yield > 0:
+            role = "run_validator"
+        else:
+            role = "delegate"
     else:
-        role = "validate"
-        expected_daily = validating_yield
+        role = max(yields, key=yields.get)
+
+    expected_daily = yields[role]
 
     # Efficiency: yield per TAO invested
     entry_cost = _estimate_entry_cost(ranking, research, profile, tao_usd_price, role)
@@ -135,7 +140,7 @@ def score_opportunity(
         + efficiency_score * weights["efficiency"]
     )
 
-    rationale = _build_rationale(ranking, research, role, expected_daily, risk_score)
+    rationale = _build_rationale(ranking, research, role, expected_daily, risk_score, profile, tao_usd_price)
 
     return {
         "netuid": ranking["netuid"],
@@ -152,7 +157,9 @@ def score_opportunity(
         },
         "rationale": rationale,
         "mining_yield_estimate": round(mining_yield, 4),
-        "validating_yield_estimate": round(validating_yield, 4),
+        "validator_yield_estimate": round(validator_yield, 4),
+        "delegate_yield_estimate": round(delegate_yield, 4),
+        "role_details": _role_details(role, ranking, profile, tao_usd_price),
     }
 
 
@@ -269,8 +276,6 @@ def _estimate_mining_yield(
 
     # WTA bifurcation
     difficulty = research.get("difficulty", "unknown")
-    # Check reward model — we infer WTA from competitive_density
-    # competitive_density < 0.01 suggests extreme WTA
     competitive_density = ranking.get("competitive_density", 0.0)
     is_wta = competitive_density < 0.01
     if is_wta and difficulty != "trivial":
@@ -278,7 +283,6 @@ def _estimate_mining_yield(
 
     # Base yield: share among miners
     net_yield = ranking.get("net_tao_yield", 0.0)
-    # Use 1/competitive_density as proxy for miner count (density = 1/miners for uniform)
     estimated_miners = max(1, int(1.0 / max(competitive_density, 0.001)))
     base_yield = net_yield / estimated_miners
 
@@ -295,32 +299,74 @@ def _estimate_mining_yield(
     return max(0.0, gross_yield)
 
 
-def _estimate_validating_yield(ranking: dict, profile: dict) -> float:
-    """Estimate daily TAO from validating."""
+def _estimate_run_validator_yield(ranking: dict, profile: dict, tao_usd_price: float) -> float:
+    """Estimate daily TAO from running your own validator.
+
+    Requires: server 24/7, subnet validator software, minimum viable stake.
+    """
     stake_available = profile.get("tao_available_stake", 0.0)
     max_positions = profile.get("max_positions", 3)
     if stake_available <= 0:
         return 0.0
 
-    # Allocate stake evenly across max_positions
+    per_subnet_stake = stake_available / max(1, max_positions)
+
+    # Below minimum viable stake, server cost exceeds earnings — not worth it
+    if per_subnet_stake < MIN_VIABLE_VALIDATOR_STAKE_TAO:
+        return 0.0
+
+    # Gross yield from staking
+    daily_rate = ranking.get("real_apy_percent", 0.0) / 100.0 / 365.0
+    gross_daily = per_subnet_stake * daily_rate
+
+    # Subtract server cost (converted to TAO)
+    if tao_usd_price > 0:
+        daily_server_cost_tao = (VALIDATOR_SERVER_MONTHLY_USD / 30.0) / tao_usd_price
+        net_daily = gross_daily - daily_server_cost_tao
+    else:
+        net_daily = gross_daily
+
+    return max(0.0, net_daily)
+
+
+def _estimate_delegate_yield(ranking: dict, profile: dict) -> float:
+    """Estimate daily TAO from delegating to an existing validator.
+
+    Truly passive: no software, no server, just stake.
+    Yield = APY * stake * (1 - commission).
+    """
+    stake_available = profile.get("tao_available_stake", 0.0)
+    max_positions = profile.get("max_positions", 3)
+    if stake_available <= 0:
+        return 0.0
+
     per_subnet_stake = stake_available / max(1, max_positions)
     daily_rate = ranking.get("real_apy_percent", 0.0) / 100.0 / 365.0
-    return per_subnet_stake * daily_rate
+    gross_daily = per_subnet_stake * daily_rate
+
+    # Deduct validator commission
+    net_daily = gross_daily * (1.0 - VALIDATOR_COMMISSION_RATE)
+    return max(0.0, net_daily)
 
 
 def _estimate_entry_cost(
     ranking: dict, research: dict, profile: dict, tao_usd_price: float, role: str
 ) -> float:
-    """Estimate total entry cost in TAO (registration + first month hardware if mining)."""
-    # Registration cost — use days_to_recoup * net_yield as proxy if available
-    # Fallback: assume 0.5 TAO typical registration
-    reg_cost = 0.5  # TODO: use actual reg cost when Collector exposes it in rankings
+    """Estimate total entry cost in TAO."""
+    reg_cost = 0.5  # Typical registration
 
     if role == "mine" and tao_usd_price > 0 and research.get("gpu_required", False):
         gpu_type = _best_compatible_gpu(research, profile)
         monthly_cost = GPU_MONTHLY_COST_USD.get(gpu_type, 300.0)
         hardware_tao = monthly_cost / tao_usd_price
         return reg_cost + hardware_tao
+
+    if role == "run_validator" and tao_usd_price > 0:
+        server_tao = VALIDATOR_SERVER_MONTHLY_USD / tao_usd_price
+        return reg_cost + server_tao
+
+    if role == "delegate":
+        return 0.0  # No registration needed for delegation
 
     return reg_cost
 
@@ -345,7 +391,7 @@ def _best_compatible_gpu(research: dict, profile: dict) -> str:
     return "RTX 4090"  # Fallback
 
 
-def _build_rationale(ranking: dict, research: dict, role: str, daily_tao: float, risk_score: float) -> str:
+def _build_rationale(ranking: dict, research: dict, role: str, daily_tao: float, risk_score: float, profile: dict, tao_usd_price: float) -> str:
     """Build human-readable rationale for recommendation."""
     parts = []
     apy = ranking.get("real_apy_percent", 0.0)
@@ -358,14 +404,55 @@ def _build_rationale(ranking: dict, research: dict, role: str, daily_tao: float,
     else:
         parts.append("elevated risk")
 
-    if research:
-        diff = research.get("difficulty", "unknown")
-        if diff != "unknown":
+    if role == "delegate":
+        parts.append("PASSIVE — just delegate, no software needed")
+        parts.append(f"~{VALIDATOR_COMMISSION_RATE*100:.0f}% commission to validator")
+    elif role == "run_validator":
+        parts.append("ACTIVE — requires 24/7 server + validator software")
+        parts.append(f"server ~${VALIDATOR_SERVER_MONTHLY_USD}/mo")
+    elif role == "mine":
+        if research:
+            diff = research.get("difficulty", "unknown")
             parts.append(f"difficulty={diff}")
-        if research.get("open_source_miner"):
-            parts.append("open-source miner available")
+            if research.get("open_source_miner"):
+                parts.append("open-source miner")
 
-    parts.append(f"role={role}")
-    parts.append(f"~{daily_tao:.2f}τ/day")
-
+    parts.append(f"~{daily_tao:.3f}τ/day")
     return "; ".join(parts)
+
+
+def _role_details(role: str, ranking: dict, profile: dict, tao_usd_price: float) -> dict:
+    """Provide transparency about what each role actually requires."""
+    max_positions = profile.get("max_positions", 3)
+    per_stake = profile.get("tao_available_stake", 0.0) / max(1, max_positions)
+
+    if role == "delegate":
+        return {
+            "type": "passive",
+            "requirements": "TAO to stake (no hardware, no software, no registration)",
+            "what_you_do": "Delegate TAO to an existing validator via btcli or Bittensor dashboard",
+            "risks": "Validator can change commission; validator could go offline (you'd stop earning)",
+            "stake_per_subnet": round(per_stake, 1),
+            "commission_percent": VALIDATOR_COMMISSION_RATE * 100,
+            "server_cost_monthly_usd": 0,
+        }
+    elif role == "run_validator":
+        return {
+            "type": "active",
+            "requirements": "Server 24/7 ($100/mo), subnet validator code running, registration (0.5τ), minimum ~500τ stake",
+            "what_you_do": "Rent a VPS, clone subnet repo, run validator process, set weights on-chain every tempo",
+            "risks": "Server downtime → vtrust drops → deregistration; subnet code updates require maintenance",
+            "stake_per_subnet": round(per_stake, 1),
+            "commission_percent": 0,
+            "server_cost_monthly_usd": VALIDATOR_SERVER_MONTHLY_USD,
+            "min_viable_stake": MIN_VIABLE_VALIDATOR_STAKE_TAO,
+        }
+    else:  # mine
+        return {
+            "type": "active",
+            "requirements": "GPU compute 24/7, subnet miner code running, registration (0.5τ)",
+            "what_you_do": "Rent GPU, clone subnet repo, run miner, compete for incentive score",
+            "risks": "Deregistration if performance below peers; hardware costs are fixed regardless of earnings",
+            "stake_per_subnet": 0,
+            "server_cost_monthly_usd": 0,
+        }

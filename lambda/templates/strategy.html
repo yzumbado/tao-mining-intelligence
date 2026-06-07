@@ -95,6 +95,9 @@
 <script>
 const GPU_VRAM = {"RTX 4090": 24, "RTX 3090": 24, "A6000": 48, "A100": 80, "H100": 80};
 const GPU_COST_MONTHLY = {"RTX 4090": 250, "RTX 3090": 150, "A6000": 500, "A100": 1000, "H100": 2000};
+const VALIDATOR_SERVER_MONTHLY = 100;
+const VALIDATOR_COMMISSION = 0.18;
+const MIN_VIABLE_VALIDATOR_STAKE = 500;
 
 let rankingsData = [];
 
@@ -151,15 +154,26 @@ function scoreSubnet(r, profile, maxYield, taoPrice) {
     const liqRisk = r.alpha_price > 0.1 ? 0 : (r.alpha_price > 0.01 ? 0.5 : 1.0);
     const riskScore = Math.max(0, 1 - (r.self_mining_risk * 0.3 + concRisk * 0.3 + instability * 0.2 + liqRisk * 0.2));
 
-    // Accessibility (without research data, use moderate default)
+    // Accessibility
     const accessScore = 0.6;
 
-    // Validating yield
     const perSubnetStake = profile.tao_available_stake / Math.max(1, profile.max_positions);
     const dailyRate = (r.real_apy_percent || 0) / 100 / 365;
-    const valYield = perSubnetStake * dailyRate;
 
-    // Mining yield (simplified — no research data in client)
+    // === THREE ROLES ===
+
+    // 1. Delegate (passive): APY * stake * (1 - commission)
+    const delegateYield = perSubnetStake * dailyRate * (1 - VALIDATOR_COMMISSION);
+
+    // 2. Run validator (active): APY * stake - server cost. Only if stake >= 500τ per position
+    let validatorYield = 0;
+    if (perSubnetStake >= MIN_VIABLE_VALIDATOR_STAKE) {
+        const grossVal = perSubnetStake * dailyRate;
+        const serverCostTao = (VALIDATOR_SERVER_MONTHLY / 30) / taoPrice;
+        validatorYield = Math.max(0, grossVal - serverCostTao);
+    }
+
+    // 3. Mine (active): share of emission - hardware cost
     let mineYield = 0;
     if (profile.hardware.length > 0) {
         const density = r.competitive_density || 0.1;
@@ -173,33 +187,58 @@ function scoreSubnet(r, profile, maxYield, taoPrice) {
     }
 
     // Role decision
-    let role, expectedDaily;
-    if (profile.prefer_passive && valYield >= mineYield * 0.8) {
-        role = 'validate'; expectedDaily = valYield;
-    } else if (mineYield > valYield) {
+    let role, expectedDaily, roleLabel;
+    const preferPassive = profile.prefer_passive;
+    const bestActive = Math.max(mineYield, validatorYield);
+
+    if (preferPassive && delegateYield >= bestActive * 0.8 && delegateYield > 0) {
+        role = 'delegate'; expectedDaily = delegateYield;
+        roleLabel = '🟢 DELEGATE (passive)';
+    } else if (validatorYield > mineYield && validatorYield > delegateYield) {
+        role = 'run_validator'; expectedDaily = validatorYield;
+        roleLabel = '🟡 RUN VALIDATOR (active)';
+    } else if (mineYield > 0 && mineYield > delegateYield) {
         role = 'mine'; expectedDaily = mineYield;
+        roleLabel = '🔴 MINE (active)';
     } else {
-        role = 'validate'; expectedDaily = valYield;
+        role = 'delegate'; expectedDaily = delegateYield;
+        roleLabel = '🟢 DELEGATE (passive)';
     }
 
     // Entry cost
-    const regCost = 0.5;
-    const hwCost = role === 'mine' && profile.hardware.length > 0
-        ? (GPU_COST_MONTHLY[profile.hardware[0].type] || 300) / taoPrice : 0;
+    const regCost = role === 'delegate' ? 0 : 0.5;
+    let hwCost = 0;
+    if (role === 'mine' && profile.hardware.length > 0) {
+        hwCost = (GPU_COST_MONTHLY[profile.hardware[0].type] || 300) / taoPrice;
+    } else if (role === 'run_validator') {
+        hwCost = VALIDATOR_SERVER_MONTHLY / taoPrice;
+    }
     const entryCost = regCost + hwCost;
 
     // Efficiency
-    const effScore = Math.min(1, expectedDaily / Math.max(entryCost, 0.01) / 0.5);
+    const effScore = Math.min(1, expectedDaily / Math.max(entryCost || 0.01, 0.01) / 0.5);
 
     const fitness = yieldScore * 0.4 + riskScore * 0.25 + accessScore * 0.2 + effScore * 0.15;
 
+    // Role requirements text
+    let requirements;
+    if (role === 'delegate') {
+        requirements = 'Just delegate TAO via btcli — no server, no software, no registration';
+    } else if (role === 'run_validator') {
+        requirements = `Server 24/7 (~$${VALIDATOR_SERVER_MONTHLY}/mo), validator software, registration, min ${MIN_VIABLE_VALIDATOR_STAKE}τ stake`;
+    } else {
+        requirements = 'GPU 24/7, miner software, registration, compete for incentive score';
+    }
+
     return {
-        netuid: r.netuid, role, fitness: Math.round(fitness * 1000) / 1000,
+        netuid: r.netuid, role, roleLabel, fitness: Math.round(fitness * 1000) / 1000,
         expectedDaily: Math.round(expectedDaily * 10000) / 10000,
         expectedMonthly: Math.round(expectedDaily * 30 * 100) / 100,
         entryCost: Math.round(entryCost * 100) / 100,
-        allocatedStake: role === 'validate' ? Math.round(perSubnetStake * 100) / 100 : 0,
+        allocatedStake: (role !== 'mine') ? Math.round(perSubnetStake * 100) / 100 : 0,
         apy: r.real_apy_percent, riskScore, yieldScore,
+        requirements,
+        yields: {mine: mineYield.toFixed(4), validator: validatorYield.toFixed(4), delegate: delegateYield.toFixed(4)},
         scores: {yield: yieldScore.toFixed(2), risk: riskScore.toFixed(2), access: accessScore.toFixed(2), efficiency: effScore.toFixed(2)},
     };
 }
@@ -278,9 +317,12 @@ function renderResults(recs, reasons, survivorCount, profile) {
                 <div class="flex items-center gap-3">
                     <span class="bg-gray-700 text-white font-bold rounded-full w-7 h-7 flex items-center justify-center text-sm">${i+1}</span>
                     <span class="font-semibold text-white">SN${r.netuid}</span>
-                    <span class="px-2 py-0.5 rounded text-xs font-medium ${r.role === 'validate' ? 'bg-blue-900 text-blue-300' : 'bg-orange-900 text-orange-300'}">${r.role.toUpperCase()}</span>
+                    <span class="text-sm">${r.roleLabel}</span>
                 </div>
-                <span class="text-sm font-mono text-green-400">${r.expectedDaily.toFixed(3)}τ/day</span>
+                <span class="text-sm font-mono text-green-400">${r.expectedDaily.toFixed(4)}τ/day</span>
+            </div>
+            <div class="bg-[#0d1117] rounded p-2 mb-2 text-xs text-gray-300">
+                <span class="text-gray-500">Requires:</span> ${r.requirements}
             </div>
             <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs text-gray-400">
                 <div>Fitness: <span class="text-white">${r.fitness}</span></div>
@@ -289,7 +331,12 @@ function renderResults(recs, reasons, survivorCount, profile) {
                 <div>Entry: <span class="text-white">${r.entryCost}τ</span></div>
                 <div>Stake: <span class="text-white">${r.allocatedStake}τ</span></div>
             </div>
-            <div class="mt-2 flex gap-2 text-xs">
+            <div class="mt-2 flex gap-3 text-xs text-gray-500">
+                <span>Mine: ${r.yields.mine}τ</span>
+                <span>Validator: ${r.yields.validator}τ</span>
+                <span>Delegate: ${r.yields.delegate}τ</span>
+            </div>
+            <div class="mt-1 flex gap-2 text-xs">
                 <span class="text-gray-500">Y:${r.scores.yield}</span>
                 <span class="text-gray-500">R:${r.scores.risk}</span>
                 <span class="text-gray-500">A:${r.scores.access}</span>
