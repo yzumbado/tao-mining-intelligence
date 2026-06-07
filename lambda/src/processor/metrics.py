@@ -1226,10 +1226,10 @@ class MetricsEngine:
         if pool_alpha < 100.0:
             return 0.0
         daily_yield_rate = total_validator_emission_daily / pool_alpha
-        # Guard: cap at 3% daily (compound above this is meaningless)
-        if daily_yield_rate > 0.03:
-            # Use simple annualization for extreme rates (avoids exponential blowup)
-            return min(daily_yield_rate * 365 * 100, 5000.0)
+        # Guard: above 0.5% daily, compound diverges from reality (new stakers
+        # dilute the pool so nobody earns true compound). Use simple APR instead.
+        if daily_yield_rate > 0.005:
+            return min(daily_yield_rate * 365 * 100, 2000.0)
         # Compound annualization: APY = (1 + daily_rate)^365 - 1
         return ((1.0 + daily_yield_rate) ** 365 - 1) * 100.0
 
