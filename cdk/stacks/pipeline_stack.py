@@ -391,6 +391,36 @@ class TaoPipelineStack(Stack):
         )
 
         # =====================================================================
+        # Strategizer Lambda (Stage 3 — personalized allocation recommendations)
+        # =====================================================================
+        strategizer_fn = _lambda.DockerImageFunction(
+            self, "StrategizerLambda",
+            function_name="tao-strategizer",
+            code=_lambda.DockerImageCode.from_image_asset(
+                directory=lambda_dir,
+                cmd=["src.strategizer.handler.handle"],
+                platform=ecr_assets.Platform.LINUX_ARM64,
+            ),
+            architecture=_lambda.Architecture.ARM_64,
+            memory_size=256,
+            timeout=Duration.seconds(60),
+            environment={
+                "PIPELINE_ENV": "aws",
+                "HOME": "/tmp",
+                "TABLE_NAME": table.table_name,
+                "BUCKET_NAME": data_bucket.bucket_name,
+            },
+            log_group=logs.LogGroup(self, "StrategizerLogs",
+                                    retention=logs.RetentionDays.ONE_MONTH),
+        )
+        table.grant_read_write_data(strategizer_fn)
+        data_bucket.grant_read_write(strategizer_fn)
+
+        # Finalizer can invoke Strategizer (async, controlled by threshold)
+        finalizer_fn.add_environment("STRATEGIZER_ARN", strategizer_fn.function_arn)
+        strategizer_fn.grant_invoke(finalizer_fn)
+
+        # =====================================================================
         # IAM: Least Privilege
         # =====================================================================
         table.grant_read_write_data(subnet_collector_fn)
