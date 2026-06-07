@@ -1221,97 +1221,11 @@ class MetricsEngine:
         """
         if pool_tao_liquidity <= 0 or alpha_price <= 0 or total_validator_emission_daily <= 0:
             return 0.0
-        # Pool alpha = how much alpha exists in the staking pool
         pool_alpha = pool_tao_liquidity / alpha_price
         if pool_alpha < 100.0:
             return 0.0
         daily_yield_rate = total_validator_emission_daily / pool_alpha
-        # Guard: above 0.5% daily, compound diverges from reality (new stakers
-        # dilute the pool so nobody earns true compound). Use simple APR instead.
-        if daily_yield_rate > 0.005:
-            return min(daily_yield_rate * 365 * 100, 2000.0)
-        # Compound annualization: APY = (1 + daily_rate)^365 - 1
-        return ((1.0 + daily_yield_rate) ** 365 - 1) * 100.0
-
-    # =========================================================================
-    # Observed APY (multi-window, from Market Observer history)
-    # =========================================================================
-
-    @staticmethod
-    def compute_observed_apy(history: list[dict]) -> dict:
-        """Compute observed APY from Market Observer history using emission data.
-
-        Uses delta(SubnetAlphaOut) between observations as the emission signal.
-        AlphaOut = total alpha emitted to all participants. Its growth rate
-        divided by pool_alpha gives the emission yield.
-
-        APY = (emission_per_day / avg_pool_alpha) * 365 * 100
-
-        Args:
-            history: Market observations with 'SK', 'pool_alpha', 'alpha_out'.
-
-        Returns:
-            Dict with apy_24h, apy_7d, apy_14d, apy_30d (percent or None).
-        """
-        from datetime import datetime, timezone, timedelta
-
-        result = {"apy_24h": None, "apy_7d": None, "apy_14d": None, "apy_30d": None}
-
-        if len(history) < 6:
-            return result
-
-        now = datetime.now(timezone.utc)
-        windows = [
-            ("apy_24h", timedelta(hours=24)),
-            ("apy_7d", timedelta(days=7)),
-            ("apy_14d", timedelta(days=14)),
-            ("apy_30d", timedelta(days=30)),
-        ]
-
-        sorted_hist = sorted(history, key=lambda x: x.get("SK", ""))
-
-        for key, window in windows:
-            cutoff = (now - window).isoformat()
-            obs = [h for h in sorted_hist if h.get("SK", "") >= cutoff]
-            if len(obs) < 6:
-                continue
-
-            # Need alpha_out in the observations (added after initial deploy)
-            first_ao = float(obs[0].get("alpha_out", 0))
-            last_ao = float(obs[-1].get("alpha_out", 0))
-            if first_ao <= 0 or last_ao <= 0:
-                continue  # No emission data yet (pre-upgrade observations)
-
-            # Emission over the window
-            emission = last_ao - first_ao
-            if emission <= 0:
-                result[key] = 0.0
-                continue
-
-            # Average pool_alpha over the window (denominator)
-            pool_alphas = [float(h.get("pool_alpha", 0)) for h in obs if float(h.get("pool_alpha", 0)) > 0]
-            if not pool_alphas:
-                continue
-            avg_pool_alpha = sum(pool_alphas) / len(pool_alphas)
-
-            # Time span in days
-            try:
-                t_first = datetime.fromisoformat(obs[0]["SK"])
-                t_last = datetime.fromisoformat(obs[-1]["SK"])
-                days = (t_last - t_first).total_seconds() / 86400
-            except (ValueError, KeyError):
-                continue
-
-            if days < 0.5:
-                continue
-
-            # Emission rate per day, divided by pool size, annualized
-            emission_per_day = emission / days
-            daily_rate = emission_per_day / avg_pool_alpha
-            apr = daily_rate * 365 * 100
-            result[key] = round(min(apr, 2000.0), 2)
-
-        return result
+        return daily_yield_rate * 365 * 100
 
     # =========================================================================
     # Net TAO Flow (30-day EMA)
