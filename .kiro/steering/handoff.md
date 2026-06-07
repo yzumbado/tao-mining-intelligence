@@ -112,6 +112,20 @@ Finalizer Lambda (invoked after each subnet completes)
     └── Stores rankings + briefing to S3
 ```
 
+**Independent loops (not in the Stage 1 chain):**
+```
+SubnetResearcher Lambda (one subnet, 7-day cycle)
+    ├── Triggered by Discovery (research staleness > 7 days)
+    ├── Fetches GitHub repo: README, Dockerfile, deps
+    ├── Deterministic parsing: GPU, model type, difficulty
+    └── Stores RESEARCH#latest to DynamoDB
+
+Market Observer Lambda (all subnets, every 10 min via EventBridge)
+    ├── Queries chain: alpha_price + pool_tao per subnet
+    ├── Writes CACHE#{netuid}|MARKET_DATA (latest for any consumer)
+    └── Appends HISTORY#{netuid}|{timestamp} (time-series, 30-day TTL)
+```
+
 ## Reference Implementation: Collector Lambda
 
 The SubnetCollector is the completed reference for how Lambda handlers should be built. Use it as the pattern for new handlers:
