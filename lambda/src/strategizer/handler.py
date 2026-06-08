@@ -95,10 +95,13 @@ def handle(event: dict, context: Any) -> dict:
         max_yield = max((r.get("net_tao_yield", 0.0) for r in survivors), default=1.0)
         max_entry_cost = max(1.0, tao_usd_price / 30.0) if tao_usd_price > 0 else 1.0  # Normalize efficiency
 
+        # Load realized returns from Market Observer history (if enough data)
+        realized_returns = _load_realized_returns(survivors, thresholds)
+
         scored = []
         for r in survivors:
             research = research_profiles.get(r["netuid"], {})
-            result = score_opportunity(r, research, profile, max_yield, max_entry_cost, tao_usd_price, thresholds)
+            result = score_opportunity(r, research, profile, max_yield, max_entry_cost, tao_usd_price, thresholds, realized_returns)
             scored.append(result)
 
         # Sort by fitness descending
@@ -222,6 +225,45 @@ def _load_active_positions() -> list[dict]:
     except Exception as e:
         logger.debug(f"No active positions found: {e}")
         return []
+
+
+def _load_realized_returns(survivors: list[dict], thresholds: dict) -> dict[int, dict]:
+    """Load realized TAO returns from Market Observer history.
+
+    Queries DynamoDB HISTORY#{netuid} for each subnet, computes realized return.
+    Returns dict of netuid → realized_return_data (only for subnets with enough history).
+    """
+    from src.strategizer.realized_return import compute_realized_tao_return
+
+    results = {}
+    for r in survivors:
+        netuid = r["netuid"]
+        try:
+            resp = _state_manager._table.query(
+                KeyConditionExpression="PK = :pk",
+                ExpressionAttributeValues={":pk": f"HISTORY#{netuid}"},
+                ScanIndexForward=True,
+            )
+            items = resp.get("Items", [])
+            if len(items) < 50:  # Need ~8h minimum (50 × 10min)
+                continue
+
+            history = [
+                {"timestamp": str(item["SK"]), "alpha_price": str(item["alpha_price"]),
+                 "pool_tao": str(item.get("pool_tao", 0))}
+                for item in items
+            ]
+
+            apy = r.get("real_apy_percent", 0.0)
+            result = compute_realized_tao_return(history, apy)
+            if result and result.get("confidence") in ("medium", "high"):
+                results[netuid] = result
+        except Exception:
+            continue
+
+    if results:
+        logger.info(f"Loaded realized returns for {len(results)} subnets (confidence: medium+)")
+    return results
 
 
 def _get_tao_usd_price() -> float:

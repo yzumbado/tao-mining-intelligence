@@ -83,6 +83,7 @@ def score_opportunity(
     max_entry_cost: float,
     tao_usd_price: float,
     thresholds: dict,
+    realized_returns: dict = None,
 ) -> dict:
     """Score a single subnet across all three roles, return best option.
 
@@ -104,8 +105,8 @@ def score_opportunity(
 
     # Estimate yields for all three roles
     mining_yield = _estimate_mining_yield(ranking, research, profile, tao_usd_price)
-    validator_yield = _estimate_run_validator_yield(ranking, profile, tao_usd_price)
-    delegate_yield = _estimate_delegate_yield(ranking, profile)
+    validator_yield = _estimate_run_validator_yield(ranking, profile, tao_usd_price, realized_returns)
+    delegate_yield = _estimate_delegate_yield(ranking, profile, realized_returns)
 
     # Pick best role
     yields = {"mine": mining_yield, "run_validator": validator_yield, "delegate": delegate_yield}
@@ -299,11 +300,11 @@ def _estimate_mining_yield(
     return max(0.0, gross_yield)
 
 
-def _estimate_run_validator_yield(ranking: dict, profile: dict, tao_usd_price: float) -> float:
+def _estimate_run_validator_yield(ranking: dict, profile: dict, tao_usd_price: float, realized_returns: dict = None) -> float:
     """Estimate daily TAO from running your own validator.
 
     Requires: server 24/7, subnet validator software, minimum viable stake.
-    Same alpha risk as delegation — yield is in alpha tokens, not TAO.
+    Uses realized return data when available, else static alpha risk discount.
     """
     stake_available = profile.get("tao_available_stake", 0.0)
     max_positions = profile.get("max_positions", 3)
@@ -312,16 +313,26 @@ def _estimate_run_validator_yield(ranking: dict, profile: dict, tao_usd_price: f
 
     per_subnet_stake = stake_available / max(1, max_positions)
 
-    # Below minimum viable stake, server cost exceeds earnings — not worth it
     if per_subnet_stake < MIN_VIABLE_VALIDATOR_STAKE_TAO:
         return 0.0
 
-    # Gross yield from staking
     apy = ranking.get("real_apy_percent", 0.0)
     daily_rate = apy / 100.0 / 365.0
     gross_daily = per_subnet_stake * daily_rate
 
-    # Alpha risk discount (same as delegate)
+    # Use realized return data if available
+    netuid = ranking.get("netuid")
+    if realized_returns and netuid in realized_returns:
+        rr = realized_returns[netuid]
+        if rr.get("confidence") in ("medium", "high"):
+            daily_price_change = rr.get("price_change_component_pct", 0.0) / 100.0
+            risk_adjusted = per_subnet_stake * (daily_rate + daily_price_change)
+            if tao_usd_price > 0:
+                daily_server_cost_tao = (VALIDATOR_SERVER_MONTHLY_USD / 30.0) / tao_usd_price
+                return max(0.0, risk_adjusted - daily_server_cost_tao)
+            return max(0.0, risk_adjusted)
+
+    # Fallback: static alpha risk discount
     if apy <= 20:
         alpha_discount = 0.90
     elif apy <= 100:
@@ -333,7 +344,6 @@ def _estimate_run_validator_yield(ranking: dict, profile: dict, tao_usd_price: f
 
     risk_adjusted = gross_daily * alpha_discount
 
-    # Subtract server cost (converted to TAO)
     if tao_usd_price > 0:
         daily_server_cost_tao = (VALIDATOR_SERVER_MONTHLY_USD / 30.0) / tao_usd_price
         net_daily = risk_adjusted - daily_server_cost_tao
@@ -343,19 +353,13 @@ def _estimate_run_validator_yield(ranking: dict, profile: dict, tao_usd_price: f
     return max(0.0, net_daily)
 
 
-def _estimate_delegate_yield(ranking: dict, profile: dict) -> float:
+def _estimate_delegate_yield(ranking: dict, profile: dict, realized_returns: dict = None) -> float:
     """Estimate daily TAO from delegating to an existing validator.
 
     Truly passive: no software, no server, just stake.
-    Yield = APY * stake * (1 - commission) * alpha_risk_discount.
 
-    IMPORTANT: Subnet APY is denominated in alpha tokens, not TAO.
-    Alpha price can depreciate, wiping out yield. We apply a discount:
-    - Low APY (<20%): likely stable, 90% confidence
-    - Medium APY (20-100%): moderate risk, 70% confidence
-    - High APY (>100%): high alpha risk, 50% confidence
-    - Extreme APY (>300%): very high risk, 30% confidence
-    Root (SN0) at ~3% is the TAO-native baseline — everything above carries alpha risk.
+    If realized_returns data is available (≥7 days of Market Observer history),
+    uses actual measured price trend. Otherwise falls back to static alpha risk discount.
     """
     stake_available = profile.get("tao_available_stake", 0.0)
     max_positions = profile.get("max_positions", 3)
@@ -370,7 +374,19 @@ def _estimate_delegate_yield(ranking: dict, profile: dict) -> float:
     # Deduct validator commission
     after_commission = gross_daily * (1.0 - VALIDATOR_COMMISSION_RATE)
 
-    # Alpha risk discount (higher APY = less likely to sustain)
+    # Use realized return data if available and confident enough
+    netuid = ranking.get("netuid")
+    if realized_returns and netuid in realized_returns:
+        rr = realized_returns[netuid]
+        if rr.get("confidence") in ("medium", "high"):
+            # Use actual price trend instead of guessing
+            daily_price_change = rr.get("price_change_component_pct", 0.0) / 100.0
+            # TAO return = alpha yield + price change (on per-unit-stake basis)
+            realized_daily = per_subnet_stake * (daily_rate + daily_price_change)
+            realized_after_commission = realized_daily * (1.0 - VALIDATOR_COMMISSION_RATE)
+            return max(0.0, realized_after_commission)
+
+    # Fallback: static alpha risk discount
     if apy <= 20:
         alpha_discount = 0.90
     elif apy <= 100:
