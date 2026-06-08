@@ -300,6 +300,7 @@ lambda/src/
 - [ ] Stage 2 RESEARCH: LLM enrichment S3 drop-box (Phase 3 of research design)
 - [ ] Stage 3: STRATEGIZE design (given resources, which subnets to enter?)
 - [ ] Label slippage as "upper bound" in site HTML (done in JSON/schema, not in template)
+- [ ] Option B: Stake delta from metagraph — measure TAO-denominated yield by comparing validator stake between consecutive snapshots (taostats methodology). More precise than price-based Option A but requires filtering out stake/unstake events. Historical data exists in S3 since May 17.
 
 > **Previous sessions**: See `kb/session-history.md` for 2026-06-01 and earlier findings.
 
