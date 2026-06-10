@@ -102,7 +102,7 @@ async def _collect_metagraph(sub, netuid: int, date: str) -> Optional[dict]:
 
         neurons = []
         for i in range(int(mg.n)):
-            neurons.append({
+            neuron = {
                 "uid": i,
                 "hotkey": mg.hotkeys[i],
                 "coldkey": mg.coldkeys[i],
@@ -117,7 +117,19 @@ async def _collect_metagraph(sub, netuid: int, date: str) -> Optional[dict]:
                 "total_stake": float(mg.TS[i]),
                 "block_at_registration": int(mg.block_at_registration[i]),
                 "validator_permit": bool(mg.validator_permit[i]),
-            })
+            }
+            neurons.append(neuron)
+
+        # Collect delegate take for validators (commission rate)
+        for neuron in neurons:
+            if neuron["validator_permit"] and neuron["dividends"] > 0:
+                try:
+                    take = await sub.get_delegate_take(neuron["hotkey"])
+                    neuron["delegate_take"] = float(take)
+                except Exception:
+                    neuron["delegate_take"] = None
+            else:
+                neuron["delegate_take"] = None
 
         snapshot = {
             "metadata": {
