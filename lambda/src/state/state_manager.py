@@ -338,7 +338,7 @@ class StateManager:
             discovery_cadence_minutes.
         """
         defaults = {
-            "max_staleness_hours": 4,
+            "max_staleness_hours": 26,
             "min_refresh_interval_minutes": 15,
             "discovery_cadence_minutes": 60,
         }

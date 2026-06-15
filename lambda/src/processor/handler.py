@@ -205,8 +205,8 @@ def handle(event: dict, context: Any) -> dict:
         except Exception as e:
             logger.warning(f"Per-subnet COMPLETE transition failed (best-effort): {e}")
 
-        # Invoke Aggregator to recompute rankings (AD18: rankings are a live view)
-        _invoke_aggregator(netuid, date, cycle_id, trace_id)
+        # Finalizer now runs on a daily EventBridge schedule (cost optimization)
+        # instead of being invoked after every subnet update.
 
         # Schedule next collection for this subnet (self-perpetuating loop)
         next_scheduled = _schedule_next_collection(netuid, tempo)
@@ -562,7 +562,7 @@ def _invoke_aggregator(netuid: int, date: str, cycle_id: str, trace_id: str) -> 
 def _schedule_next_collection(netuid: int, tempo: int) -> bool:
     """Create a one-time EventBridge schedule for the next collection of this subnet.
 
-    The delay is max(min_refresh_interval, min(tempo_seconds, max_staleness)).
+    Fixed 24h cadence — one collection per subnet per day to stay within Lambda free tier.
     Schedule self-deletes after firing (ActionAfterCompletion=DELETE).
     """
     if not _config.is_aws:
@@ -570,13 +570,8 @@ def _schedule_next_collection(netuid: int, tempo: int) -> bool:
 
     try:
         scheduler = boto3.client("scheduler", region_name=_config.region)
-        refresh_policy = _state_manager.get_refresh_policy()
 
-        tempo_seconds = tempo * 12  # blocks × 12s per block
-        max_staleness_seconds = refresh_policy["max_staleness_hours"] * 3600
-        min_refresh_seconds = refresh_policy["min_refresh_interval_minutes"] * 60
-
-        delay_seconds = max(min_refresh_seconds, min(tempo_seconds, max_staleness_seconds))
+        delay_seconds = 86400  # 24 hours
         next_run = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
 
         collector_arn = os.environ.get("SUBNET_COLLECTOR_ARN", "")

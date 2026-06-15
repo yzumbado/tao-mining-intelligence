@@ -306,6 +306,14 @@ class TaoPipelineStack(Stack):
             targets=[targets.LambdaFunction(discovery_fn)],
         )
 
+        # Finalizer: daily schedule at 06:00 UTC (cost optimization — was per-subnet)
+        events.Rule(
+            self, "DailyFinalizer",
+            rule_name="tao-daily-finalizer",
+            schedule=events.Schedule.cron(hour="6", minute="0"),
+            targets=[targets.LambdaFunction(finalizer_fn)],
+        )
+
         # =====================================================================
         # Researcher Lambda (Stage 2 — subnet repo analysis)
         # =====================================================================
