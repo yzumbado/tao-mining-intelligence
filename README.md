@@ -18,7 +18,7 @@ Per-subnet intelligence includes: reward model (WTA/distributed), Gini coefficie
 
 ## Status
 
-**Version**: 0.1.0 (Deployed — 129 subnets collected, 128 processed, rankings generated)
+**Version**: 0.1.0 (Deployed — all active subnets collected daily, rankings generated twice daily)
 
 | Phase | Status | Description |
 |-------|--------|-------------|
@@ -41,7 +41,7 @@ source .venv/bin/activate
 # Install dependencies (includes dev tools: pytest, hypothesis, moto)
 pip install -e ".[dev]"
 
-# Run tests (205 passing as of 2026-06-01)
+# Run tests (236 passing as of 2026-06-17)
 pytest tests/ -v
 
 # Validate SDK connectivity (requires internet)

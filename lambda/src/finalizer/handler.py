@@ -1,16 +1,15 @@
-"""Finalizer Lambda handler — generates briefing, rankings, and marks cycle complete.
+"""Finalizer Lambda handler — generates briefing, rankings, and site.
 
-Triggered by SQS (completion-tracker queue, forwarded from SNS subnet-processed).
-Each invocation checks if all subnets in the cycle are done. If not, exits early.
-If complete, reads all derived metrics, generates aggregate outputs, and marks
-the cycle as COMPLETE.
+Triggered by EventBridge schedule (twice daily: 06:00 + 18:00 UTC).
+Reads all derived metrics (today with yesterday fallback), generates
+rankings, briefing, staking rankings, and HTML site. Uploads to S3 + CloudFront.
 
 Outputs:
 - S3: derived/rankings/{date}.json
 - S3: derived/briefings/{date}.json
 - DynamoDB: RANKING|LATEST
 - DynamoDB: BRIEFING|{date}
-- DynamoDB: CYCLE#{cycle_id}|STATUS → COMPLETE
+- Site bucket: rankings.json, briefing.json, llms.txt, HTML pages
 """
 
 import json
@@ -140,19 +139,27 @@ def _read_all_derived_metrics(date: str, netuids: list[int]) -> dict[int, dict]:
     Falls back to yesterday's data when today's file doesn't exist yet
     (daily collection schedules are spread across 24h, so some subnets
     haven't collected by the time the Finalizer runs).
+
+    Uses ThreadPoolExecutor for parallel S3 reads.
     """
+    from concurrent.futures import ThreadPoolExecutor
     from datetime import datetime, timedelta
     yesterday = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    metrics = {}
-    for netuid in netuids:
+    def _read_one(netuid: int) -> tuple[int, dict | None]:
         path = _storage.get_date_path("derived/metrics", date, netuid)
         data = _storage.read_snapshot(path)
         if data is None:
             path = _storage.get_date_path("derived/metrics", yesterday, netuid)
             data = _storage.read_snapshot(path)
-        if data is not None:
-            metrics[netuid] = data
+        return (netuid, data)
+
+    metrics = {}
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        results = executor.map(_read_one, netuids)
+        for netuid, data in results:
+            if data is not None:
+                metrics[netuid] = data
     return metrics
 
 
@@ -176,15 +183,21 @@ def _safe_float(value, default: float = 0.0) -> float:
 
 def _compute_flow_emas(netuids: list[int]) -> dict[int, float]:
     """Compute net flow EMA for each subnet from stake history."""
-    emas: dict[int, float] = {}
-    for netuid in netuids:
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _compute_one(netuid: int) -> tuple[int, float]:
         history = _state_manager.get_stake_history(netuid)
         if len(history) >= 2:
             stakes = [float(item["total_stake"]) for item in history]
             result = MetricsEngine.compute_net_tao_flow(stakes)
-            emas[netuid] = result["ema_flow"]
-        else:
-            emas[netuid] = 0.0
+            return (netuid, result["ema_flow"])
+        return (netuid, 0.0)
+
+    emas: dict[int, float] = {}
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        results = executor.map(_compute_one, netuids)
+        for netuid, ema in results:
+            emas[netuid] = ema
     return emas
 
 
@@ -323,7 +336,7 @@ def _generate_staking_rankings(all_metrics: dict[int, dict]) -> list[dict]:
     """
     from src.processor.metrics import MetricsEngine
 
-    VALIDATOR_TAKE_RATE = 0.18  # Interim flat estimate (real is per-validator)
+    VALIDATOR_TAKE_RATE = 0.18  # TODO: Replace with per-validator delegate_take from metagraph (interim flat 18%)
 
     staking_ranks = []
     for netuid, metrics in all_metrics.items():

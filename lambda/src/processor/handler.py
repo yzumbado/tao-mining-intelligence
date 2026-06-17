@@ -2,13 +2,14 @@
 
 Triggered by SQS message (one per subnet per cycle). Reads raw data from S3,
 runs MetricsEngine, stores derived metrics, updates split profiles in DynamoDB,
-tracks hotkeys, and publishes completion to SNS.
+tracks hotkeys, and schedules the next collection.
 
 Architecture decisions applied:
 - Decision 11: Split profiles are single source of truth (no METRICS#latest)
 - Decision 12: Tempo conversion happens here before calling MetricsEngine
 - Decision 13: Taoflow returns HEALTHY when insufficient history
 - Decision 14: Per-subnet FSM is best-effort (cycle counter is critical path)
+- Decision 18: Self-perpetuating loops (schedules next collection at +24h)
 """
 
 import json
@@ -534,34 +535,8 @@ def _get_emission_rank(neuron, neurons) -> int:
 
 
 # ---------------------------------------------------------------------------
-# SNS publishing
+# Scheduling
 # ---------------------------------------------------------------------------
-
-
-def _invoke_aggregator(netuid: int, date: str, cycle_id: str, trace_id: str) -> None:
-    """Invoke the Finalizer/Aggregator Lambda to recompute rankings.
-
-    AD18: Rankings are a live view — recomputed after each subnet update.
-    Best-effort: if invocation fails, rankings are stale but not lost.
-    """
-    if not _config.is_aws:
-        return
-
-    aggregator_arn = os.environ.get("AGGREGATOR_ARN", "")
-    if not aggregator_arn:
-        return
-
-    try:
-        lambda_client = boto3.client("lambda", region_name=_config.region)
-        lambda_client.invoke(
-            FunctionName=aggregator_arn,
-            InvocationType="Event",  # Async — don't wait for response
-            Payload=json.dumps({"date": date, "cycle_id": cycle_id,
-                                "trace_id": trace_id, "trigger_netuid": netuid}).encode(),
-        )
-    except Exception as e:
-        logger.warning(f"Failed to invoke Aggregator (best-effort): {e}")
-
 
 def _schedule_next_collection(netuid: int, tempo: int) -> bool:
     """Create a one-time EventBridge schedule for the next collection of this subnet.

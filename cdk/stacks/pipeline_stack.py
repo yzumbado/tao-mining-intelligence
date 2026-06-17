@@ -121,31 +121,6 @@ class TaoPipelineStack(Stack):
             ),
         )
 
-        subnet_processed_topic = sns.Topic(
-            self, "SubnetProcessedTopic",
-            topic_name="tao-subnet-processed",
-        )
-
-        completion_dlq = sqs.Queue(
-            self, "CompletionTrackerDLQ",
-            queue_name="tao-completion-tracker-dlq",
-            retention_period=Duration.days(14),
-        )
-
-        completion_queue = sqs.Queue(
-            self, "CompletionTrackerQueue",
-            queue_name="tao-completion-tracker",
-            visibility_timeout=Duration.minutes(5),
-            dead_letter_queue=sqs.DeadLetterQueue(
-                max_receive_count=5,
-                queue=completion_dlq,
-            ),
-        )
-
-        subnet_processed_topic.add_subscription(
-            subs.SqsSubscription(completion_queue)
-        )
-
         # =====================================================================
         # Secrets: Parameter Store
         # =====================================================================
@@ -203,7 +178,6 @@ class TaoPipelineStack(Stack):
                 "HOME": "/tmp",
                 "TABLE_NAME": table.table_name,
                 "BUCKET_NAME": data_bucket.bucket_name,
-                "SUBNET_PROCESSED_TOPIC_ARN": subnet_processed_topic.topic_arn,
             },
             log_group=logs.LogGroup(self, "ProcessorLogs",
                                     retention=logs.RetentionDays.ONE_MONTH),
@@ -391,7 +365,7 @@ class TaoPipelineStack(Stack):
 
         events.Rule(
             self, "MarketObserverSchedule",
-            rule_name="tao-market-observer-10min",
+            rule_name="tao-market-observer-hourly",
             schedule=events.Schedule.rate(Duration.minutes(60)),
             targets=[targets.LambdaFunction(market_observer_fn)],
         )
@@ -453,7 +427,6 @@ class TaoPipelineStack(Stack):
         site_bucket.grant_put(finalizer_fn)
 
         process_queue.grant_send_messages(subnet_collector_fn)
-        subnet_processed_topic.grant_publish(processor_fn)
 
         # Processor needs to create/delete schedules
         processor_fn.add_to_role_policy(iam.PolicyStatement(
@@ -469,10 +442,6 @@ class TaoPipelineStack(Stack):
         # Add env vars for self-scheduling
         processor_fn.add_environment("SUBNET_COLLECTOR_ARN", subnet_collector_fn.function_arn)
         processor_fn.add_environment("SCHEDULER_ROLE_ARN", scheduler_role.role_arn)
-        processor_fn.add_environment("AGGREGATOR_ARN", finalizer_fn.function_arn)
-
-        # Processor invokes Aggregator (async) after each subnet
-        finalizer_fn.grant_invoke(processor_fn)
 
         # =====================================================================
         # Monitoring: DLQ Alarms + Staleness
@@ -480,7 +449,6 @@ class TaoPipelineStack(Stack):
         for dlq, name in [
             (collection_dlq, "Collection"),
             (process_dlq, "Process"),
-            (completion_dlq, "Completion"),
         ]:
             cloudwatch.Alarm(
                 self, f"{name}DLQAlarm",
@@ -494,6 +462,18 @@ class TaoPipelineStack(Stack):
 
         # Staleness alarm: fires if Discovery Lambda reports stale subnets
         alert_topic = sns.Topic(self, "AlertTopic", topic_name="tao-pipeline-alerts")
+
+        # Finalizer duration alarm: fires if approaching 5-min timeout
+        cloudwatch.Alarm(
+            self, "FinalizerDurationAlarm",
+            alarm_name="tao-finalizer-duration-high",
+            metric=finalizer_fn.metric_duration(),
+            threshold=240000,  # 4 minutes in ms (timeout is 5 min)
+            evaluation_periods=1,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+        )
+
         alert_topic.add_subscription(
             subs.EmailSubscription("yzumbado@gmail.com")
         )

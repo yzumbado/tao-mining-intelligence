@@ -48,6 +48,16 @@ DEFAULT_THRESHOLDS: dict[str, float | int] = {
 
     # Data freshness
     "data_staleness_warning_hours": 36,  # Show warning if data older than this
+
+    # Attractiveness score weights (must sum to 1.0)
+    "attractiveness_yield_weight": 0.30,
+    "attractiveness_flow_weight": 0.25,
+    "attractiveness_emission_weight": 0.25,
+    "attractiveness_depth_weight": 0.20,
+    "attractiveness_emission_cap": 0.02,  # 2% emission share = max score
+
+    # Liquidity warning (for rankings output)
+    "liquidity_warning_pool_tao": 5000,  # Pool < this → liquidity_warning=True
 }
 
 
