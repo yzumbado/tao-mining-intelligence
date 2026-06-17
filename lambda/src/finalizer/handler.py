@@ -135,11 +135,22 @@ def handle(event: dict, context: Any) -> dict:
 
 
 def _read_all_derived_metrics(date: str, netuids: list[int]) -> dict[int, dict]:
-    """Read derived metrics for all subnets from S3."""
+    """Read derived metrics for all subnets from S3.
+
+    Falls back to yesterday's data when today's file doesn't exist yet
+    (daily collection schedules are spread across 24h, so some subnets
+    haven't collected by the time the Finalizer runs).
+    """
+    from datetime import datetime, timedelta
+    yesterday = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+
     metrics = {}
     for netuid in netuids:
         path = _storage.get_date_path("derived/metrics", date, netuid)
         data = _storage.read_snapshot(path)
+        if data is None:
+            path = _storage.get_date_path("derived/metrics", yesterday, netuid)
+            data = _storage.read_snapshot(path)
         if data is not None:
             metrics[netuid] = data
     return metrics
@@ -233,6 +244,12 @@ def _generate_rankings(all_metrics: dict[int, dict],
             "self_mining_risk": sm_risk,
             "real_apy_percent": _safe_float(data.get("real_apy_percent", 0.0)),
             "concentration_risk": data.get("concentration_risk", {}),
+            "pool_tao_liquidity": _safe_float(roi.get("pool_tao_liquidity", 0.0)),
+            "registration_cost_tao": _safe_float(roi.get("registration_cost_tao", 0.0)),
+            "earning_miners_count": int(_safe_float(roi.get("earning_miners_count", 0))),
+            "liquidity_warning": _safe_float(roi.get("pool_tao_liquidity", 0.0)) < 5000.0,
+            "reward_model": data.get("reward_distribution", {}).get("model", "unknown"),
+            "gini_coefficient": _safe_float(data.get("reward_distribution", {}).get("gini_coefficient", 0.0)),
         })
 
     # Sort by attractiveness score descending

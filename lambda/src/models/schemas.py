@@ -317,6 +317,7 @@ class ROIEstimate(BaseModel):
     days_to_recoup: float = Field(ge=0.0, description="Days to recoup registration cost")
     thirty_day_projected_tao: float = Field(description="30-day net TAO projection")
     alpha_tao_rate: float = Field(default=0.0, ge=0.0, description="Alpha/TAO exchange rate")
+    earning_miners_count: int = Field(default=0, ge=0, description="Number of pure miners earning emission")
     slippage_estimate_percent: float = Field(
         default=0.0, ge=0.0, le=1.0, description="Estimated slippage as decimal (constant-product upper bound; real slippage is lower with concentrated liquidity)"
     )

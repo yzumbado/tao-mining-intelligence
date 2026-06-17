@@ -472,7 +472,7 @@ class MetricsEngine:
                 determines your real return. Averages across EARNING miners only (emission > 0)
                 to avoid dilution by zero-earners on WTA subnets.
             formula: |
-                miner_emissions = [n.emission for n if n.incentive > 0]  # already daily
+                miner_emissions = [n.emission for n if n.incentive > 0 AND n.dividends == 0]  # pure miners only
                 avg_daily_alpha = sum(miner_emissions) / len(miner_emissions)
                 net_tao_yield_per_day = avg_daily_alpha × alpha_tao_price
                 days_to_recoup = registration_cost_tao / net_tao_yield_per_day
@@ -510,7 +510,7 @@ class MetricsEngine:
             ROIEstimate with yield, payback, and projection data.
         """
         miner_emissions = [
-            n.emission for n in neurons if n.incentive > 0
+            n.emission for n in neurons if n.incentive > 0 and n.dividends == 0
         ]
 
         if not miner_emissions or alpha_tao_price <= 0:
@@ -519,6 +519,7 @@ class MetricsEngine:
                 days_to_recoup=float("inf"),
                 thirty_day_projected_tao=-registration_cost_tao,
                 alpha_tao_rate=max(0.0, alpha_tao_price),
+                earning_miners_count=len(miner_emissions),
                 slippage_estimate_percent=0.0,
                 hold_vs_swap_recommendation=HoldVsSwap.SWAP,
                 confidence=Confidence.LOW,
@@ -568,6 +569,7 @@ class MetricsEngine:
             days_to_recoup=days_to_recoup,
             thirty_day_projected_tao=thirty_day_tao,
             alpha_tao_rate=alpha_tao_price,
+            earning_miners_count=len(miner_emissions),
             slippage_estimate_percent=slippage,
             hold_vs_swap_recommendation=hold_vs_swap,
             confidence=confidence,

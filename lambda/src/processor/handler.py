@@ -184,6 +184,7 @@ def handle(event: dict, context: Any) -> dict:
             concentration_risk=concentration_risk,
             real_apy=real_apy,
             pool_tao_liquidity=pool_tao,
+            registration_cost_tao=reg_cost_tao,
             source_block_number=current_block)
         _storage.store_snapshot(
             _storage.get_date_path("derived/metrics", date, netuid), derived_data)
@@ -356,6 +357,7 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                           concentration_risk: Optional[dict] = None,
                           real_apy: float = 0.0,
                           pool_tao_liquidity: float = 0.0,
+                          registration_cost_tao: float = 0.0,
                           source_block_number: int = 0) -> dict:
     """Build the derived metrics JSON structure for S3 storage."""
     now = datetime.now(timezone.utc).isoformat()
@@ -387,7 +389,9 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                 "days_to_recoup": roi.days_to_recoup,
                 "thirty_day_projected_tao": roi.thirty_day_projected_tao,
                 "alpha_tao_rate": roi.alpha_tao_rate,
+                "earning_miners_count": roi.earning_miners_count,
                 "pool_tao_liquidity": pool_tao_liquidity,
+                "registration_cost_tao": registration_cost_tao,
                 "slippage_estimate_percent": roi.slippage_estimate_percent,
                 "hold_vs_swap_recommendation": roi.hold_vs_swap_recommendation.value,
                 "confidence": roi.confidence.value,
