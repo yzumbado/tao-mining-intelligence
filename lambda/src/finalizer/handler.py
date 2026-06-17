@@ -581,8 +581,7 @@ def _upload_agent_files(rankings: list, briefing: dict,
         llms_txt = (
             "# TAO Mining Intelligence\n"
             "> Bittensor subnet mining/validating metrics.\n"
-            "> Data refreshes per-subnet every 20-240 minutes (tempo-based).\n"
-            "> No subnet older than 4 hours.\n\n"
+            "> Data refreshes once per subnet per day. Rankings recomputed twice daily (06:00 + 18:00 UTC).\n\n"
             "## Endpoints\n"
             "- /data/rankings.json — Subnet rankings sorted by attractiveness\n"
             "- /data/briefing.json — Latest daily briefing and alerts\n"
