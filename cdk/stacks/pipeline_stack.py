@@ -392,7 +392,7 @@ class TaoPipelineStack(Stack):
         events.Rule(
             self, "MarketObserverSchedule",
             rule_name="tao-market-observer-10min",
-            schedule=events.Schedule.rate(Duration.minutes(10)),
+            schedule=events.Schedule.rate(Duration.minutes(60)),
             targets=[targets.LambdaFunction(market_observer_fn)],
         )
 
