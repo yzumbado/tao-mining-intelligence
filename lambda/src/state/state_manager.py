@@ -555,7 +555,8 @@ class StateManager:
             if not item:
                 return []
             return [int(n) for n in item.get("netuids", [])]
-        except Exception:
+        except Exception as e:
+            logger.warning(f"DynamoDB read failed (returning empty): {e}")
             return []
 
     def set_previous_active_subnets(self, netuids: list[int]) -> None:
@@ -566,8 +567,8 @@ class StateManager:
                 "SK": "PREVIOUS_ACTIVE_SUBNETS",
                 "netuids": netuids,
             })
-        except Exception:
-            pass  # Non-critical — next briefing will just show all as new again
+        except Exception as e:
+            logger.warning(f"Failed to store previous active subnets: {e}")
 
     def get_research_profile(self, netuid: int) -> Optional[dict]:
         """Get research profile for a subnet."""
@@ -575,7 +576,8 @@ class StateManager:
             resp = self._table.get_item(
                 Key={"PK": f"SUBNET#{netuid}", "SK": "RESEARCH#latest"})
             return resp.get("Item")
-        except Exception:
+        except Exception as e:
+            logger.warning(f"DynamoDB read failed (returning None): {e}")
             return None
 
     def store_research_profile(self, netuid: int, profile: dict) -> None:
@@ -639,7 +641,8 @@ class StateManager:
             resp = self._table.get_item(
                 Key={"PK": f"CACHE#{netuid}", "SK": "MARKET_DATA"})
             return resp.get("Item")
-        except Exception:
+        except Exception as e:
+            logger.warning(f"DynamoDB read failed (returning None): {e}")
             return None
 
     def query_market_history(self, netuid: int, since_iso: str) -> list[dict]:
@@ -659,7 +662,8 @@ class StateManager:
                 },
             )
             return resp.get("Items", [])
-        except Exception:
+        except Exception as e:
+            logger.warning(f"DynamoDB read failed (returning empty): {e}")
             return []
 
     def scan_basic_profiles(self) -> dict[int, dict]:
@@ -675,8 +679,8 @@ class StateManager:
             for item in resp.get("Items", []):
                 nid = int(item.get("netuid", 0))
                 profiles[nid] = item
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"scan_basic_profiles failed: {e}")
         return profiles
 
     # =========================================================================
@@ -723,7 +727,8 @@ class StateManager:
                 Limit=days,
             )
             return resp.get("Items", [])
-        except Exception:
+        except Exception as e:
+            logger.warning(f"DynamoDB read failed (returning empty): {e}")
             return []
 
     def get_basic_profile(self, netuid: int) -> Optional[dict]:
@@ -732,5 +737,6 @@ class StateManager:
             resp = self._table.get_item(
                 Key={"PK": f"SUBNET#{netuid}", "SK": "PROFILE#basic"})
             return resp.get("Item")
-        except Exception:
+        except Exception as e:
+            logger.warning(f"DynamoDB read failed (returning None): {e}")
             return None

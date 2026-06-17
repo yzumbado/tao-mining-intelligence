@@ -619,5 +619,5 @@ def _mark_error(netuid: int, cycle_id: str, error: str) -> None:
     try:
         _state_manager.transition(netuid, "PROCESSING", "ERROR_RETRYABLE",
                                   metadata={"error": error[:500], "cycle_id": cycle_id})
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"_mark_error transition failed for SN{netuid}: {e}")

@@ -127,5 +127,5 @@ def _publish_metric(observed: int) -> None:
                 "Unit": "Count",
             }],
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"CloudWatch metric publish failed: {e}")

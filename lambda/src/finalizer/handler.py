@@ -105,8 +105,8 @@ def handle(event: dict, context: Any) -> dict:
         # Mark cycle complete (best-effort, for observability only)
         try:
             _state_manager.mark_cycle_complete(cycle_id)
-        except Exception:
-            pass  # Not critical in independent refresh model
+        except Exception as e:
+            logger.warning(f"mark_cycle_complete failed (non-critical): {e}")
 
         # Upload agent-consumable files to site bucket (AD18)
         _upload_agent_files(rankings, briefing, all_metrics, date)

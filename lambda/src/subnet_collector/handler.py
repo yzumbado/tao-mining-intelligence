@@ -126,7 +126,8 @@ async def _collect_metagraph(sub, netuid: int, date: str) -> Optional[dict]:
                 try:
                     take = await sub.get_delegate_take(neuron["hotkey"])
                     neuron["delegate_take"] = float(take)
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"delegate_take lookup failed for {neuron['hotkey'][:12]}: {e}")
                     neuron["delegate_take"] = None
             else:
                 neuron["delegate_take"] = None

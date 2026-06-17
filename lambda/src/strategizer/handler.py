@@ -211,8 +211,8 @@ def _load_research_profiles(rankings: list[dict]) -> dict[int, dict]:
             profile = _state_manager.get_research_profile(netuid)
             if profile:
                 profiles[netuid] = profile
-        except Exception:
-            pass  # No research data — subnet will be scored with no research context
+        except Exception as e:
+            logger.debug(f"Research profile read failed: {e}")
     return profiles
 
 
@@ -258,7 +258,8 @@ def _load_realized_returns(survivors: list[dict], thresholds: dict) -> dict[int,
             result = compute_realized_tao_return(history, apy)
             if result and result.get("confidence") in ("medium", "high"):
                 results[netuid] = result
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Hardware compatibility check failed: {e}")
             continue
 
     if results:
@@ -274,8 +275,8 @@ def _get_tao_usd_price() -> float:
         item = resp.get("Item", {})
         if "price_usd" in item:
             return float(item["price_usd"])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"TAO price lookup failed: {e}")
 
     # Fallback: use thresholds or default
     logger.warning(f"TAO/USD price unavailable — using fallback ${DEFAULT_TAO_USD_PRICE}")
