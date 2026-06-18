@@ -1473,3 +1473,64 @@ class MetricsEngine:
         }
 
 
+
+    # =========================================================================
+    # Price Trend Analysis (from Market Observer history)
+    # =========================================================================
+
+    @staticmethod
+    def compute_price_trend(prices: list[float]) -> dict:
+        """Compute 7-day price trend, volatility, and direction from history.
+
+        Metric:
+            name: Alpha Price Trend Analysis
+            status: HYPOTHESIS
+            formula: |
+                price_trend_7d = (last - first) / first
+                price_volatility_7d = stdev(hourly_returns)
+                trend_direction = "up" if trend > 5%, "down" if < -5%, else "stable"
+            output_range: "trend: (-1, ∞); volatility: [0, ∞); direction: {up, stable, down}"
+            usefulness_mining: Appreciating alpha means HOLD recommendation (don't swap to TAO yet)
+            usefulness_staking: Depreciating alpha erodes staking yield in TAO terms
+
+        Args:
+            prices: Chronologically ordered alpha prices (oldest first).
+                    Expected: 7 days of hourly data (~168 points).
+
+        Returns:
+            Dict with price_trend_7d, price_volatility_7d, trend_direction.
+            Returns zeros if insufficient data (<2 prices).
+        """
+        if len(prices) < 2 or prices[0] <= 0:
+            return {
+                "price_trend_7d": 0.0,
+                "price_volatility_7d": 0.0,
+                "trend_direction": "stable",
+            }
+
+        trend = (prices[-1] - prices[0]) / prices[0]
+
+        # Hourly returns for volatility
+        returns = [(prices[i] - prices[i - 1]) / prices[i - 1]
+                   for i in range(1, len(prices)) if prices[i - 1] > 0]
+
+        if returns:
+            mean_r = sum(returns) / len(returns)
+            variance = sum((r - mean_r) ** 2 for r in returns) / len(returns)
+            volatility = variance ** 0.5
+        else:
+            volatility = 0.0
+
+        # Direction: >5% = up, <-5% = down, else stable
+        if trend > 0.05:
+            direction = "up"
+        elif trend < -0.05:
+            direction = "down"
+        else:
+            direction = "stable"
+
+        return {
+            "price_trend_7d": round(trend, 6),
+            "price_volatility_7d": round(volatility, 6),
+            "trend_direction": direction,
+        }

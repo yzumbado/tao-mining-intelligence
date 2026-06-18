@@ -76,8 +76,11 @@ def handle(event: dict, context: Any) -> dict:
         # Compute net flow EMAs from stake history
         flow_emas = _compute_flow_emas(list(all_metrics.keys()))
 
+        # Compute 7-day price trends from Market Observer history
+        price_trends = _compute_price_trends(list(all_metrics.keys()))
+
         # Generate rankings
-        rankings = _generate_rankings(all_metrics, flow_emas)
+        rankings = _generate_rankings(all_metrics, flow_emas, price_trends)
 
         # Generate briefing
         briefing = _generate_briefing(date, cycle_id, all_metrics, active_subnets)
@@ -201,8 +204,31 @@ def _compute_flow_emas(netuids: list[int]) -> dict[int, float]:
     return emas
 
 
+def _compute_price_trends(netuids: list[int]) -> dict[int, dict]:
+    """Compute 7-day price trends for all subnets from Market Observer history."""
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import datetime, timedelta, timezone
+
+    since_iso = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+
+    def _compute_one(netuid: int) -> tuple[int, dict]:
+        history = _state_manager.query_market_history(netuid, since_iso)
+        if len(history) >= 2:
+            prices = [float(item["alpha_price"]) for item in history]
+            return (netuid, MetricsEngine.compute_price_trend(prices))
+        return (netuid, {"price_trend_7d": 0.0, "price_volatility_7d": 0.0, "trend_direction": "stable"})
+
+    trends: dict[int, dict] = {}
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        results = executor.map(_compute_one, netuids)
+        for netuid, trend in results:
+            trends[netuid] = trend
+    return trends
+
+
 def _generate_rankings(all_metrics: dict[int, dict],
-                       flow_emas: dict[int, float] | None = None) -> list[dict]:
+                       flow_emas: dict[int, float] | None = None,
+                       price_trends: dict[int, dict] | None = None) -> list[dict]:
     """Generate subnet rankings sorted by attractiveness score."""
     rankings = []
     # TAO-normalize emissions before computing shares (different alpha tokens)
@@ -263,6 +289,9 @@ def _generate_rankings(all_metrics: dict[int, dict],
             "liquidity_warning": _safe_float(roi.get("pool_tao_liquidity", 0.0)) < 5000.0,
             "reward_model": data.get("reward_distribution", {}).get("model", "unknown"),
             "gini_coefficient": _safe_float(data.get("reward_distribution", {}).get("gini_coefficient", 0.0)),
+            "price_trend_7d": (price_trends or {}).get(netuid, {}).get("price_trend_7d", 0.0),
+            "price_volatility_7d": (price_trends or {}).get(netuid, {}).get("price_volatility_7d", 0.0),
+            "trend_direction": (price_trends or {}).get(netuid, {}).get("trend_direction", "stable"),
         })
 
     # Sort by attractiveness score descending

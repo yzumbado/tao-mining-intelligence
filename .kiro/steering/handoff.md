@@ -291,13 +291,13 @@ lambda/src/
 
 #### Pending Tasks (next session):
 
-**P1 — Option B: Price Trend Integration (NEXT):**
-- [ ] Read 7-day price history from DynamoDB HISTORY#{netuid}|{timestamp}
-- [ ] Compute: 7-day price change %, volatility, trend direction
-- [ ] Add to rankings JSON: price_trend_7d, price_volatility_7d, trend_direction
-- [ ] Feed historical prices into compute_roi_estimates() for hold_vs_swap
+**P1 — Option B: Price Trend Integration (COMPLETE ✅):**
+- [x] Read 7-day price history from DynamoDB HISTORY#{netuid}|{timestamp}
+- [x] Compute: 7-day price change %, volatility, trend direction
+- [x] Add to rankings JSON: price_trend_7d, price_volatility_7d, trend_direction
+- [x] Feed historical prices into compute_roi_estimates() for hold_vs_swap
 
-**P2 — Stage 3: STRATEGIZE:**
+**P1 — Stage 3: STRATEGIZE (NEXT):**
 - [ ] Design: given user profile (hardware, capital, risk), produce allocation recommendation
 - [ ] Consume rankings + research + price trends
 - [ ] Lambda stub exists in CDK (tao-strategizer)

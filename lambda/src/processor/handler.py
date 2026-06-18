@@ -127,9 +127,15 @@ def handle(event: dict, context: Any) -> dict:
         reward_model, gini, top_3 = MetricsEngine.detect_reward_distribution_model(emissions)
         metrics_computed.append("reward_distribution")
 
+        # Read 7-day price history for hold_vs_swap recommendation
+        from datetime import timedelta
+        since_iso = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        price_history = _state_manager.query_market_history(netuid, since_iso)
+        historical_prices = [float(h["alpha_price"]) for h in price_history] if price_history else None
+
         # ROI estimate (emissions already converted to daily by _build_neurons)
         roi = MetricsEngine.compute_roi_estimates(
-            neurons, reg_cost_tao, alpha_price, pool_tao)
+            neurons, reg_cost_tao, alpha_price, pool_tao, historical_prices)
         metrics_computed.append("roi_estimate")
 
         # Emission trend
