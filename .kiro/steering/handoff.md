@@ -35,9 +35,9 @@ An autonomous pipeline that continuously collects Bittensor subnet data, compute
 
 **Stage summary** (see `kb/product-vision-roadmap.md` for full detail):
 ```
-Stage 1: COLLECT    ✅   — on-chain data, metrics, rankings (self-refreshing every 20-240 min)
+Stage 1: COLLECT    ✅   — on-chain data, metrics, rankings (daily per subnet, twice-daily rankings)
 Stage 2: RESEARCH   ✅   — GitHub repo analysis, hardware requirements (7-day cycle)
-       + Market Observer — price + pool_tao every 10 min (accumulating data, no consumers yet)
+       + Market Observer — price + pool_tao every 60 min (accumulating data, no consumers yet)
 Stage 3: STRATEGIZE ← NEXT — given my resources, which subnets to enter?
 Stage 4: BUILD             — generate/adapt mining agents
 Stage 5: TEST              — simulate before risking TAO
@@ -80,16 +80,16 @@ The user (or Kiro agent) reads our `rankings.json` and makes decisions like:
 ```
 Discovery Lambda (hourly safety net)
     ├── Queries chain for active subnets
-    ├── Checks each subnet's processed_at for staleness
+    ├── Checks each subnet's processed_at for staleness (>26h)
     └── Creates EventBridge schedules for new/stale subnets
                 │
                 ▼
-EventBridge Scheduler (one-time, per subnet, self-perpetuating)
+EventBridge Scheduler (one-time, per subnet, self-perpetuating every 24h)
                 │
                 ▼
-SubnetCollector Lambda (one subnet per invocation)
+SubnetCollector Lambda (one subnet per invocation, once per day)
     ├── Collects metagraph from Bittensor chain
-    ├── Collects hyperparameters, alpha price, reg cost
+    ├── Collects hyperparameters, alpha price, reg cost, delegate_take
     ├── Validates (warn on quality issues, don't reject)
     ├── Stores raw snapshot to S3 (with collected_at, source_block)
     └── Sends SQS message → Processing Queue
@@ -101,15 +101,17 @@ Processor Lambda (one invocation per subnet)
     ├── Runs MetricsEngine (pure functions) on the data
     ├── Stores derived metrics to S3 (with processed_at)
     ├── Writes profiles to DynamoDB (with processed_at)
-    ├── Invokes Finalizer (async) → rankings recompute
-    └── Creates next EventBridge schedule (tempo-based, self-perpetuating)
+    └── Creates next EventBridge schedule (+24h, self-perpetuating)
                 │
                 ▼
-Finalizer Lambda (invoked after each subnet completes)
-    ├── Reads ALL current profiles from DynamoDB
-    ├── Generates rankings from whatever data exists
-    ├── Generates daily briefing (rolling 24h changes)
-    └── Stores rankings + briefing to S3
+Finalizer Lambda (twice daily: 06:00 + 18:00 UTC via EventBridge)
+    ├── Reads ALL derived metrics from S3 (today + yesterday fallback)
+    ├── Parallel reads via ThreadPoolExecutor (16 workers)
+    ├── Generates rankings (17 fields per subnet, 129 subnets)
+    ├── Generates staking rankings (per-subnet delegate_take)
+    ├── Generates daily briefing (alerts, new subnets)
+    ├── Generates HTML site → S3 → CloudFront
+    └── Stores rankings + briefing to S3 + DynamoDB
 ```
 
 **Independent loops (not in the Stage 1 chain):**
@@ -120,7 +122,7 @@ SubnetResearcher Lambda (one subnet, 7-day cycle)
     ├── Deterministic parsing: GPU, model type, difficulty
     └── Stores RESEARCH#latest to DynamoDB
 
-Market Observer Lambda (all subnets, every 10 min via EventBridge)
+Market Observer Lambda (all subnets, every 60 min via EventBridge)
     ├── Queries chain: alpha_price + pool_tao per subnet
     ├── Writes CACHE#{netuid}|MARKET_DATA (latest for any consumer)
     └── Appends HISTORY#{netuid}|{timestamp} (time-series, 30-day TTL)
@@ -136,7 +138,7 @@ The SubnetCollector is the completed reference for how Lambda handlers should be
 ## Key Architecture Decisions
 
 - **Container Image Lambda** (not zip) — Bittensor SDK is 200-300MB
-- **Self-scheduling per-subnet loops** (AD18) — each subnet refreshes independently at its tempo cadence
+- **Self-scheduling per-subnet loops** (AD18) — each subnet refreshes independently at daily cadence
 - **EventBridge Scheduler one-time schedules** — self-cleaning, exact timing, no orchestrator in hot path
 - **Discovery Lambda** (hourly) — safety net for new/stale subnets, not a coordinator
 - **Rankings as live view** — recomputed after each subnet update, not gated on "all complete"
@@ -214,7 +216,7 @@ lambda/src/
 ├── researcher/
 │   └── handler.py         # ✅ Stage 2 subnet repo research
 └── market_observer/
-    └── handler.py         # ✅ High-frequency cache + time-series (10-min cadence)
+    └── handler.py         # ✅ High-frequency cache + time-series (60-min cadence)
 ```
 
 ## What's Next (Post-Development)
@@ -233,7 +235,7 @@ lambda/src/
 
 ### Completed:
 - ✅ All 5 development phases complete (SDK validation → core infra → metrics → handlers → site/deploy)
-- ✅ 205 tests passing (property, unit, integration, CDK)
+- ✅ 242 tests passing (property, unit, integration, CDK)
 - ✅ 17 metric algorithms, all cross-validated against live chain
 - ✅ Security hardening, SNS alerting, conformance post-conditions
 - ✅ AD18 independent refresh fully implemented (old batch model removed)
@@ -279,28 +281,32 @@ lambda/src/
 5. **Static repo mappings rot fast.** 38-56% of community-maintained Bittensor repo links are dead within months. Always validate URLs on use.
 
 #### Current Production State:
-- Pipeline: 129 subnets self-refreshing (avg 30 min freshness)
-- Market Observer: running every 10 min, accumulating price/pool history
+- Pipeline: 129 subnets collected once daily, rankings generated twice daily (06:00 + 18:00 UTC)
+- Market Observer: running every 60 min, accumulating price/pool history
 - Researcher: deployed, researches repos on 7-day cycle via Discovery
-- Rankings: live at https://dkfh19zkgqq18.cloudfront.net
-- Tests: 203 passing
-- Cost: $0/month (free tier)
+- Rankings: live at https://dkfh19zkgqq18.cloudfront.net (17 fields, 129 subnets)
+- Tests: 242 passing
+- Cost: ~31K/400K GB-sec monthly (8% of free tier)
+- Tech debt: fully resolved (June 17 session)
 
 #### Pending Tasks (next session):
 
-**P1 — APR Convergence (monitor):**
-- [ ] Verify all 129 subnets show APR < 3000% (simple formula deployed June 7)
-- [ ] Verify SN44 APR ~65% (was 91% compound, 37% before that)
+**P1 — Option B: Price Trend Integration (NEXT):**
+- [ ] Read 7-day price history from DynamoDB HISTORY#{netuid}|{timestamp}
+- [ ] Compute: 7-day price change %, volatility, trend direction
+- [ ] Add to rankings JSON: price_trend_7d, price_volatility_7d, trend_direction
+- [ ] Feed historical prices into compute_roi_estimates() for hold_vs_swap
 
-**P2 — Wire Cache Consumers (when needed):**
-- [ ] Market Observer cache has no readers yet — wire when building API or alerts
-- [ ] Consider price volatility metric from history (7+ days of data available)
+**P2 — Stage 3: STRATEGIZE:**
+- [ ] Design: given user profile (hardware, capital, risk), produce allocation recommendation
+- [ ] Consume rankings + research + price trends
+- [ ] Lambda stub exists in CDK (tao-strategizer)
 
 **P3 — Backlog:**
 - [ ] Stage 2 RESEARCH: LLM enrichment S3 drop-box (Phase 3 of research design)
-- [ ] Stage 3: STRATEGIZE design (given resources, which subnets to enter?)
 - [ ] Label slippage as "upper bound" in site HTML (done in JSON/schema, not in template)
-- [ ] Option B: Stake delta from metagraph — measure TAO-denominated yield by comparing validator stake between consecutive snapshots (taostats methodology). More precise than price-based Option A but requires filtering out stake/unstake events. Historical data exists in S3 since May 17.
+- [ ] Update validate_all_metrics.py for new fields (earning_miners_count, delegate_take, pool_tao)
+- [ ] Adapt validation gate for daily cadence (pre-deploy spot check currently uses live vs stale data)
 
 > **Previous sessions**: See `kb/session-history.md` for 2026-06-01 and earlier findings.
 
@@ -312,7 +318,7 @@ lambda/src/
 # If setting up fresh: /opt/homebrew/bin/python3.12 -m venv .venv
 
 source .venv/bin/activate
-.venv/bin/pytest tests/ -v          # All 203 tests
+.venv/bin/pytest tests/ -v          # All 242 tests
 .venv/bin/pytest tests/properties/  # Property tests only
 .venv/bin/pytest tests/unit/        # Unit tests only
 .venv/bin/pytest tests/integration/ # E2E integration

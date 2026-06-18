@@ -25,6 +25,37 @@ Before ending a session:
 4. **Verify docs match code**: if you changed a metric or architecture, update the relevant docs
 5. **Commit the handoff update** and push
 
+### Document Freshness Rule (Mandatory)
+
+**Trigger**: Any commit that changes one of the following is INCOMPLETE without updating the corresponding docs:
+
+| Change Type | Must Update |
+|---|---|
+| Lambda cadence/schedule | handoff.md (Pipeline Data Flow), CDK rule names |
+| New field in rankings JSON | handoff.md (How the Output Is Used) |
+| Formula change | metrics docstring, `kb/` if referenced |
+| New/removed Lambda | handoff.md (Pipeline Data Flow + Code Structure) |
+| Threshold change | thresholds.py docstring, handoff.md if user-visible |
+| Architecture decision | `kb/architecture-decisions.md`, handoff.md |
+
+**Enforcement**: The PR/commit that makes the code change MUST include the doc update in the same commit. Don't create "update docs" follow-up tasks — they never get done.
+
+**Anti-pattern** (what went wrong June 15-17):
+```
+Commit 1: "switch to daily collection" ← changed cadence
+Commit 2: "add data quality fixes" ← changed output schema
+Commit 3: "resolve tech debt" ← removed infrastructure
+... handoff.md still says "refreshes every 20-240 minutes"
+```
+
+**Correct pattern**:
+```
+Commit 1: "switch to daily collection"
+  - lambda code changes
+  - CDK changes
+  - handoff.md: updated cadence, data flow, pending tasks
+```
+
 ### Feature Development (When Building)
 
 When building a new feature or fixing a bug, follow this order:
