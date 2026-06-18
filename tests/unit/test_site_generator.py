@@ -35,6 +35,17 @@ def _make_subnet_summary(netuid: int, *, name: str = None,
         "attractiveness_score": 0.7,
         "active_miners": 50,
         "registration_cost": 1.0,
+        "real_apy_percent": 65.0,
+        "self_mining_risk": 0.0,
+        "concentration_risk": {"risk": 0.0, "tier": "healthy"},
+        "pool_tao_liquidity": 30000.0,
+        "liquidity_warning": False,
+        "earning_miners_count": 5,
+        "reward_model": "TIERED",
+        "gini_coefficient": 0.5,
+        "price_trend_7d": -0.02,
+        "price_volatility_7d": 0.001,
+        "trend_direction": "stable",
     }
 
 
@@ -43,11 +54,23 @@ def _make_rankings() -> list[dict]:
         {"netuid": 1, "net_tao_yield": 1.0, "days_to_recoup": 5.0,
          "competitive_density": 0.2, "emission_trend": 0.05,
          "attractiveness_score": 0.85, "alpha_price": 0.05,
-         "thirty_day_projection": 14.0},
+         "thirty_day_projection": 14.0, "real_apy_percent": 120.0,
+         "self_mining_risk": 0.0, "concentration_risk": {"risk": 0.0, "tier": "healthy"},
+         "pool_tao_liquidity": 50000.0, "liquidity_warning": False,
+         "earning_miners_count": 10, "reward_model": "TIERED",
+         "gini_coefficient": 0.45, "registration_cost_tao": 0.5,
+         "price_trend_7d": 0.06, "price_volatility_7d": 0.002,
+         "trend_direction": "up"},
         {"netuid": 2, "net_tao_yield": 0.5, "days_to_recoup": 15.0,
          "competitive_density": 0.4, "emission_trend": -0.02,
          "attractiveness_score": 0.55, "alpha_price": 0.03,
-         "thirty_day_projection": 4.0},
+         "thirty_day_projection": 4.0, "real_apy_percent": 45.0,
+         "self_mining_risk": 0.8, "concentration_risk": {"risk": 0.7, "tier": "high"},
+         "pool_tao_liquidity": 2000.0, "liquidity_warning": True,
+         "earning_miners_count": 0, "reward_model": "WINNER_TAKES_ALL",
+         "gini_coefficient": 0.9, "registration_cost_tao": 2.0,
+         "price_trend_7d": -0.08, "price_volatility_7d": 0.005,
+         "trend_direction": "down"},
     ]
 
 
@@ -84,28 +107,28 @@ class TestIndexPage:
         subnets = [_make_subnet_summary(1), _make_subnet_summary(2)]
         html = gen.generate_index(subnets, last_updated="2026-05-15T01:00:00+00:00")
 
-        assert "Subnet 1" in html
-        assert "Subnet 2" in html
+        assert "SN1" in html
+        assert "SN2" in html
 
-    def test_index_contains_category_badges(self):
-        """Index page shows category badges."""
+    def test_index_contains_reward_model_badges(self):
+        """Index page shows reward model badges."""
         from src.site_generator.generator import SiteGenerator
 
         gen = SiteGenerator()
-        subnets = [_make_subnet_summary(1, category="LLM_INFERENCE")]
+        subnets = [_make_subnet_summary(1)]
         html = gen.generate_index(subnets, last_updated="2026-05-15T01:00:00+00:00")
 
-        assert "LLM_INFERENCE" in html
+        assert "TIER" in html
 
-    def test_index_contains_taoflow_status(self):
-        """Index page shows taoflow health status."""
+    def test_index_contains_apy(self):
+        """Index page shows APY for subnets."""
         from src.site_generator.generator import SiteGenerator
 
         gen = SiteGenerator()
-        subnets = [_make_subnet_summary(1, taoflow_status="DEATH_SPIRAL_RISK")]
+        subnets = [_make_subnet_summary(1)]
         html = gen.generate_index(subnets, last_updated="2026-05-15T01:00:00+00:00")
 
-        assert "DEATH_SPIRAL_RISK" in html
+        assert "65%" in html
 
 
 class TestRankingsPage:

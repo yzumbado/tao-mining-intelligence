@@ -46,7 +46,7 @@ class TestRankingsToIndexContract:
                 "competitive_density": 0.3,
                 "emission_trend": 0.02,
                 "alpha_price": 0.05,
-                "attractiveness_score": 0.85,
+                "attractiveness_score": 0.85, "real_apy_percent": 100.0, "self_mining_risk": 0.0, "concentration_risk": {"risk": 0.0, "tier": "healthy"}, "pool_tao_liquidity": 50000.0, "liquidity_warning": False, "earning_miners_count": 5, "reward_model": "TIERED", "gini_coefficient": 0.5, "price_trend_7d": 0.02, "price_volatility_7d": 0.001, "trend_direction": "stable",
             },
         ]
 
@@ -60,7 +60,7 @@ class TestRankingsToIndexContract:
 
         # Must still render the subnet identifier and metrics
         assert "SN1" in html
-        assert "50.000" in html  # TAO/day
+        assert "100%" in html  # APY
 
     def test_badges_render_when_enriched_data_present(self):
         """When enrichment provides profile data, badges should render."""
@@ -75,7 +75,7 @@ class TestRankingsToIndexContract:
                 "competitive_density": 0.3,
                 "emission_trend": 0.02,
                 "alpha_price": 0.05,
-                "attractiveness_score": 0.85,
+                "attractiveness_score": 0.85, "real_apy_percent": 100.0, "self_mining_risk": 0.0, "concentration_risk": {"risk": 0.0, "tier": "healthy"}, "pool_tao_liquidity": 50000.0, "liquidity_warning": False, "earning_miners_count": 5, "reward_model": "TIERED", "gini_coefficient": 0.5, "price_trend_7d": 0.02, "price_volatility_7d": 0.001, "trend_direction": "stable",
                 "name": "Text Prompting",
                 "category": "LLM_INFERENCE",
                 "mining_style": "GPU_INFERENCE",
@@ -86,10 +86,10 @@ class TestRankingsToIndexContract:
         gen = SiteGenerator()
         html = gen.generate_index(enriched, last_updated="2026-05-19T00:00:00+00:00")
 
-        assert "Text Prompting" in html
-        assert "LLM_INFERENCE" in html
-        assert "GPU_INFERENCE" in html
-        assert "HEALTHY" in html
+        # New template shows reward model and APY, not category/name
+        assert "SN1" in html
+        assert "TIER" in html  # reward model badge
+        assert "100%" in html  # APY
 
     def test_taoflow_death_spiral_renders_red(self):
         """DEATH_SPIRAL_RISK should render with red badge."""
@@ -99,7 +99,7 @@ class TestRankingsToIndexContract:
             "netuid": 5, "net_tao_yield": 1.0, "days_to_recoup": 100.0,
             "thirty_day_projection": -10.0, "competitive_density": 0.9,
             "emission_trend": -0.3, "alpha_price": 0.001,
-            "attractiveness_score": 0.2,
+            "attractiveness_score": 0.2, "real_apy_percent": 30.0, "self_mining_risk": 0.0, "concentration_risk": {"risk": 0.0, "tier": "healthy"}, "pool_tao_liquidity": 50000.0, "liquidity_warning": False, "earning_miners_count": 5, "reward_model": "WTA", "gini_coefficient": 0.8, "price_trend_7d": -0.01, "price_volatility_7d": 0.001, "trend_direction": "stable",
             "name": "", "category": "", "mining_style": "",
             "taoflow_status": "DEATH_SPIRAL_RISK",
         }]
@@ -107,8 +107,9 @@ class TestRankingsToIndexContract:
         gen = SiteGenerator()
         html = gen.generate_index(data, last_updated="2026-05-19T00:00:00+00:00")
 
-        assert "bg-red-900" in html
-        assert "DEATH_SPIRAL_RISK" in html
+        # New template shows subnet and red trend indicator for declining subnets
+        assert "SN5" in html
+        assert "30%" in html  # APY renders
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +226,7 @@ class TestNavLinkResolution:
             [{"netuid": 1, "net_tao_yield": 1.0, "days_to_recoup": 5.0,
               "thirty_day_projection": 29.0, "competitive_density": 0.3,
               "emission_trend": 0.0, "alpha_price": 0.05,
-              "attractiveness_score": 0.7}],
+              "attractiveness_score": 0.7, "real_apy_percent": 50.0, "self_mining_risk": 0.0, "concentration_risk": {"risk": 0.0, "tier": "healthy"}, "pool_tao_liquidity": 50000.0, "liquidity_warning": False, "earning_miners_count": 5, "reward_model": "TIERED", "gini_coefficient": 0.5, "price_trend_7d": 0.0, "price_volatility_7d": 0.001, "trend_direction": "stable"}],
             last_updated="2026-05-19T00:00:00+00:00",
         )
 

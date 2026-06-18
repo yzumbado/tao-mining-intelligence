@@ -1,37 +1,200 @@
 {% extends "base.html" %}
 {% block title %}TAO Mining Intelligence — Rankings{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold mb-6">Subnet Rankings</h1>
-<div class="overflow-x-auto">
-<table class="w-full text-sm text-left">
-    <thead class="text-xs text-gray-400 uppercase bg-[#161b22]">
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold">Subnet Rankings</h1>
+    <span class="text-xs text-gray-500">{{ rankings|length }} subnets · sorted by attractiveness</span>
+</div>
+
+<!-- Filter chips -->
+<div class="flex flex-wrap gap-2 mb-4" id="filters">
+    <button class="filter-chip active" data-filter="all">All</button>
+    <button class="filter-chip" data-filter="safe">Safe (no warnings)</button>
+    <button class="filter-chip" data-filter="high-apy">APY &gt; 100%</button>
+    <button class="filter-chip" data-filter="trending-up">Trend ↑</button>
+    <button class="filter-chip" data-filter="has-miners">Has miners</button>
+    <button class="filter-chip" data-filter="deep-pool">Deep liquidity</button>
+</div>
+
+<div class="overflow-x-auto rounded-lg border border-gray-700">
+<table class="w-full text-sm text-left" id="rankings-table">
+    <thead class="text-xs text-gray-400 uppercase bg-[#161b22] sticky top-0 z-10">
         <tr>
-            <th class="px-4 py-3">Rank</th>
-            <th class="px-4 py-3">Subnet</th>
-            <th class="px-4 py-3">TAO/day</th>
-            <th class="px-4 py-3">Recoup</th>
-            <th class="px-4 py-3">30d Proj</th>
-            <th class="px-4 py-3">Density</th>
-            <th class="px-4 py-3">Trend</th>
-            <th class="px-4 py-3">Score</th>
+            <th class="px-3 py-3 cursor-pointer hover:text-white" data-sort="rank">#</th>
+            <th class="px-3 py-3 cursor-pointer hover:text-white" data-sort="netuid">SN</th>
+            <th class="px-3 py-3 cursor-pointer hover:text-white" data-sort="score">Score</th>
+            <th class="px-3 py-3 cursor-pointer hover:text-white" data-sort="apy">APY</th>
+            <th class="px-3 py-3 cursor-pointer hover:text-white" data-sort="trend">7d Trend</th>
+            <th class="px-3 py-3 cursor-pointer hover:text-white" data-sort="yield">τ/day</th>
+            <th class="px-3 py-3 cursor-pointer hover:text-white" data-sort="pool">Pool τ</th>
+            <th class="px-3 py-3">Model</th>
+            <th class="px-3 py-3 cursor-pointer hover:text-white" data-sort="miners">Miners</th>
+            <th class="px-3 py-3">Risk</th>
+            <th class="px-3 py-3 cursor-pointer hover:text-white" data-sort="gini">Gini</th>
         </tr>
     </thead>
     <tbody>
     {% for r in rankings %}
-        <tr class="border-b border-gray-700">
-            <td class="px-4 py-3 text-gray-400">#{{ loop.index }}</td>
-            <td class="px-4 py-3 text-white font-medium">SN{{ r.netuid }}</td>
-            <td class="px-4 py-3">{{ "%.4f"|format(r.net_tao_yield) }}</td>
-            <td class="px-4 py-3">{{ "%.0f"|format(r.days_to_recoup) }}d</td>
-            <td class="px-4 py-3">{{ "%.2f"|format(r.thirty_day_projection) }}</td>
-            <td class="px-4 py-3">{{ "%.0f"|format(r.competitive_density * 100) }}%</td>
-            <td class="px-4 py-3 {% if r.emission_trend > 0 %}text-green-400{% elif r.emission_trend < 0 %}text-red-400{% endif %}">
-                {{ "%+.1f"|format(r.emission_trend * 100) }}%
+        <tr class="border-b border-gray-800 hover:bg-[#1c2128] transition-colors subnet-row"
+            data-score="{{ r.attractiveness_score }}"
+            data-apy="{{ r.real_apy_percent }}"
+            data-trend="{{ r.price_trend_7d }}"
+            data-direction="{{ r.trend_direction }}"
+            data-yield="{{ r.net_tao_yield }}"
+            data-pool="{{ r.pool_tao_liquidity }}"
+            data-miners="{{ r.earning_miners_count }}"
+            data-liq-warn="{{ r.liquidity_warning }}"
+            data-sm-risk="{{ r.self_mining_risk }}"
+            data-netuid="{{ r.netuid }}"
+            data-gini="{{ r.gini_coefficient }}">
+            <td class="px-3 py-2.5 text-gray-500 text-xs">{{ loop.index }}</td>
+            <td class="px-3 py-2.5 text-white font-semibold">{{ r.netuid }}</td>
+            <!-- Score bar -->
+            <td class="px-3 py-2.5">
+                <div class="flex items-center gap-2">
+                    <div class="w-16 h-2 bg-gray-700 rounded-full overflow-hidden">
+                        <div class="h-full rounded-full {% if r.attractiveness_score > 0.7 %}bg-emerald-500{% elif r.attractiveness_score > 0.4 %}bg-yellow-500{% else %}bg-red-500{% endif %}"
+                             style="width: {{ (r.attractiveness_score * 100)|int }}%"></div>
+                    </div>
+                    <span class="text-xs text-gray-400">{{ "%.2f"|format(r.attractiveness_score) }}</span>
+                </div>
             </td>
-            <td class="px-4 py-3 text-white font-bold">{{ "%.2f"|format(r.attractiveness_score) }}</td>
+            <!-- APY -->
+            <td class="px-3 py-2.5 font-medium {% if r.real_apy_percent > 100 %}text-emerald-400{% elif r.real_apy_percent > 50 %}text-green-300{% else %}text-gray-300{% endif %}">
+                {{ "%.0f"|format(r.real_apy_percent) }}%
+            </td>
+            <!-- Price Trend -->
+            <td class="px-3 py-2.5">
+                {% if r.trend_direction == "up" %}
+                    <span class="inline-flex items-center gap-1 text-emerald-400">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M5.293 9.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L10 6.414 6.707 9.707a1 1 0 01-1.414 0z"/></svg>
+                        {{ "%+.1f"|format(r.price_trend_7d * 100) }}%
+                    </span>
+                {% elif r.trend_direction == "down" %}
+                    <span class="inline-flex items-center gap-1 text-red-400">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M14.707 10.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L10 13.586l3.293-3.293a1 1 0 011.414 0z"/></svg>
+                        {{ "%+.1f"|format(r.price_trend_7d * 100) }}%
+                    </span>
+                {% else %}
+                    <span class="text-gray-500">→ {{ "%+.1f"|format(r.price_trend_7d * 100) }}%</span>
+                {% endif %}
+            </td>
+            <!-- TAO Yield -->
+            <td class="px-3 py-2.5 {% if r.net_tao_yield > 10 %}text-white{% else %}text-gray-400{% endif %}">
+                {{ "%.1f"|format(r.net_tao_yield) }}
+            </td>
+            <!-- Pool Liquidity -->
+            <td class="px-3 py-2.5">
+                {% if r.liquidity_warning %}
+                    <span class="text-amber-400" title="Low liquidity: {{ '%.0f'|format(r.pool_tao_liquidity) }} TAO">⚠ {{ "%.0f"|format(r.pool_tao_liquidity / 1000) }}K</span>
+                {% else %}
+                    <span class="text-gray-300">{{ "%.0f"|format(r.pool_tao_liquidity / 1000) }}K</span>
+                {% endif %}
+            </td>
+            <!-- Reward Model -->
+            <td class="px-3 py-2.5">
+                {% if r.reward_model == "WINNER_TAKES_ALL" %}
+                    <span class="px-1.5 py-0.5 text-xs rounded bg-purple-900/50 text-purple-300">WTA</span>
+                {% elif r.reward_model == "TIERED" %}
+                    <span class="px-1.5 py-0.5 text-xs rounded bg-blue-900/50 text-blue-300">TIER</span>
+                {% elif r.reward_model == "PROPORTIONAL" %}
+                    <span class="px-1.5 py-0.5 text-xs rounded bg-green-900/50 text-green-300">PROP</span>
+                {% else %}
+                    <span class="px-1.5 py-0.5 text-xs rounded bg-gray-800 text-gray-500">?</span>
+                {% endif %}
+            </td>
+            <!-- Miners -->
+            <td class="px-3 py-2.5 {% if r.earning_miners_count == 0 %}text-gray-600{% elif r.earning_miners_count < 5 %}text-amber-300{% else %}text-gray-300{% endif %}">
+                {{ r.earning_miners_count }}
+            </td>
+            <!-- Risk badges -->
+            <td class="px-3 py-2.5">
+                {% if r.self_mining_risk > 0.5 %}
+                    <span class="px-1.5 py-0.5 text-xs rounded bg-red-900/50 text-red-300" title="Self-mining risk: {{ '%.0f'|format(r.self_mining_risk * 100) }}%">⛏ SM</span>
+                {% endif %}
+                {% if r.concentration_risk.risk is defined and r.concentration_risk.risk > 0.5 %}
+                    <span class="px-1.5 py-0.5 text-xs rounded bg-orange-900/50 text-orange-300" title="Concentration: {{ r.concentration_risk.tier }}">🏛 C</span>
+                {% endif %}
+                {% if not r.self_mining_risk and (r.concentration_risk.risk is not defined or r.concentration_risk.risk == 0) %}
+                    <span class="text-gray-600">—</span>
+                {% endif %}
+            </td>
+            <!-- Gini -->
+            <td class="px-3 py-2.5 text-gray-400 text-xs">{{ "%.2f"|format(r.gini_coefficient) }}</td>
         </tr>
     {% endfor %}
     </tbody>
 </table>
 </div>
+
+<style>
+.filter-chip {
+    @apply px-3 py-1 text-xs rounded-full border border-gray-600 text-gray-400 hover:border-gray-400 hover:text-white transition-colors cursor-pointer;
+}
+.filter-chip.active {
+    @apply border-emerald-500 text-emerald-400 bg-emerald-900/20;
+}
+</style>
+
+<script>
+// Client-side sorting
+document.querySelectorAll('[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+        const key = th.dataset.sort;
+        const tbody = document.querySelector('#rankings-table tbody');
+        const rows = Array.from(tbody.querySelectorAll('.subnet-row'));
+        const dir = th.classList.contains('sort-asc') ? -1 : 1;
+
+        document.querySelectorAll('[data-sort]').forEach(h => h.classList.remove('sort-asc', 'sort-desc', 'text-white'));
+        th.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc', 'text-white');
+
+        const getVal = (row) => {
+            switch(key) {
+                case 'rank': return parseInt(row.cells[0].textContent);
+                case 'netuid': return parseInt(row.dataset.netuid);
+                case 'score': return parseFloat(row.dataset.score);
+                case 'apy': return parseFloat(row.dataset.apy);
+                case 'trend': return parseFloat(row.dataset.trend);
+                case 'yield': return parseFloat(row.dataset.yield);
+                case 'pool': return parseFloat(row.dataset.pool);
+                case 'miners': return parseInt(row.dataset.miners);
+                case 'gini': return parseFloat(row.dataset.gini);
+                default: return 0;
+            }
+        };
+        rows.sort((a, b) => (getVal(b) - getVal(a)) * dir);
+        rows.forEach(r => tbody.appendChild(r));
+    });
+});
+
+// Client-side filtering
+document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        const filter = chip.dataset.filter;
+        document.querySelectorAll('.subnet-row').forEach(row => {
+            let show = true;
+            switch(filter) {
+                case 'safe':
+                    show = row.dataset.liqWarn === 'False' && parseFloat(row.dataset.smRisk) === 0;
+                    break;
+                case 'high-apy':
+                    show = parseFloat(row.dataset.apy) > 100;
+                    break;
+                case 'trending-up':
+                    show = row.dataset.direction === 'up';
+                    break;
+                case 'has-miners':
+                    show = parseInt(row.dataset.miners) > 0;
+                    break;
+                case 'deep-pool':
+                    show = parseFloat(row.dataset.pool) > 20000;
+                    break;
+            }
+            row.style.display = show ? '' : 'none';
+        });
+    });
+});
+</script>
 {% endblock %}
