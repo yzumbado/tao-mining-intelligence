@@ -250,6 +250,7 @@ def _build_neurons(neurons_raw: list[dict], tempos_per_day: float):
             alpha_stake=n.get("alpha_stake", 0.0),
             total_stake=n.get("total_stake", 0.0),
             block_at_registration=n.get("block_at_registration", 0),
+            delegate_take=n.get("delegate_take", 0.18),
         ))
     return neurons
 
@@ -423,6 +424,7 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
                 "net_tao_yield_per_validator_per_day": validator_landscape.net_tao_yield_per_validator_per_day,
                 "avg_vtrust": validator_landscape.avg_vtrust,
                 "min_vtrust": validator_landscape.min_vtrust,
+                "avg_delegate_take": validator_landscape.avg_delegate_take,
             },
             "self_mining_risk": self_mining_risk or {"risk_score": 0.0, "signals": []},
             "concentration_risk": concentration_risk or {"risk": 0.0, "tier": "healthy"},

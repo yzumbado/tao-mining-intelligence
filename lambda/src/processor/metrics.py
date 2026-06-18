@@ -858,6 +858,12 @@ class MetricsEngine:
         avg_vtrust = sum(vtrust_values) / len(vtrust_values)
         min_vtrust = min(vtrust_values)
 
+        # Stake-weighted average delegate take rate
+        if total_stake > 0:
+            avg_take = sum(v.delegate_take * v.stake for v in validators) / total_stake
+        else:
+            avg_take = 0.18
+
         return ValidatorLandscape(
             active_validators=len(validators),
             total_validator_stake=total_stake,
@@ -868,6 +874,7 @@ class MetricsEngine:
             net_tao_yield_per_validator_per_day=net_yield,
             avg_vtrust=avg_vtrust,
             min_vtrust=min_vtrust,
+            avg_delegate_take=avg_take,
         )
 
 

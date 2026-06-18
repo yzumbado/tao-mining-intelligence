@@ -104,6 +104,7 @@ class Neuron(BaseModel):
     alpha_stake: float = Field(default=0.0, ge=0.0, description="Alpha token stake (from AS field)")
     total_stake: float = Field(default=0.0, ge=0.0, description="Total stake TAO+alpha (from TS field)")
     block_at_registration: int = Field(ge=0)
+    delegate_take: float = Field(default=0.18, ge=0.0, le=1.0, description="Validator take rate [0,1] (default 0.18 if unavailable)")
 
     @property
     def is_validator(self) -> bool:
@@ -367,6 +368,7 @@ class ValidatorLandscape(BaseModel):
     net_tao_yield_per_validator_per_day: float = Field(ge=0.0)
     avg_vtrust: float = Field(default=0.0, ge=0.0, le=1.0, description="Average VTrust across validators")
     min_vtrust: float = Field(default=0.0, ge=0.0, le=1.0, description="Minimum VTrust (weakest validator)")
+    avg_delegate_take: float = Field(default=0.18, ge=0.0, le=1.0, description="Stake-weighted avg validator take rate")
 
 
 

@@ -332,11 +332,9 @@ def _generate_staking_rankings(all_metrics: dict[int, dict]) -> list[dict]:
 
     Uses validator landscape data from derived metrics to compute
     yield per TAO staked, accounting for entry/exit slippage and
-    validator take rate (flat 18% interim estimate).
+    per-subnet average validator take rate (stake-weighted).
     """
     from src.processor.metrics import MetricsEngine
-
-    VALIDATOR_TAKE_RATE = 0.18  # TODO: Replace with per-validator delegate_take from metagraph (interim flat 18%)
 
     staking_ranks = []
     for netuid, metrics in all_metrics.items():
@@ -349,12 +347,13 @@ def _generate_staking_rankings(all_metrics: dict[int, dict]) -> list[dict]:
         total_stake = _safe_float(vl.get("total_validator_stake", 0.0))
         validators = vl.get("active_validators", 0)
         net_yield = _safe_float(vl.get("net_tao_yield_per_validator_per_day", 0.0))
+        take_rate = _safe_float(vl.get("avg_delegate_take", 0.18))
 
         if validators == 0 or alpha_price <= 0 or total_stake <= 0 or pool_tao <= 0:
             continue
 
         # Total daily validator emission in TAO (after take rate)
-        total_daily_tao = net_yield * validators * (1.0 - VALIDATOR_TAKE_RATE)
+        total_daily_tao = net_yield * validators * (1.0 - take_rate)
 
         # Yield per unit of stake
         yield_per_stake = total_daily_tao / total_stake
@@ -375,6 +374,7 @@ def _generate_staking_rankings(all_metrics: dict[int, dict]) -> list[dict]:
             "total_validator_stake": round(total_stake, 2),
             "active_validators": validators,
             "alpha_price": alpha_price,
+            "avg_delegate_take": round(take_rate, 4),
             "concentrated": vl.get("concentrated", False),
             "top_1_stake_share": round(_safe_float(vl.get("top_1_stake_share", 0)), 4),
             "break_even_alpha_depreciation": round(break_even, 4),
