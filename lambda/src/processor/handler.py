@@ -256,7 +256,7 @@ def _build_neurons(neurons_raw: list[dict], tempos_per_day: float):
             alpha_stake=n.get("alpha_stake", 0.0),
             total_stake=n.get("total_stake", 0.0),
             block_at_registration=n.get("block_at_registration", 0),
-            delegate_take=n.get("delegate_take", 0.18),
+            delegate_take=n.get("delegate_take") if n.get("delegate_take") is not None else 0.18,
         ))
     return neurons
 

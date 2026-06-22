@@ -27,9 +27,10 @@ class TestPriceTrendProperties:
     def test_direction_consistent_with_trend(self, prices):
         """Direction should match trend sign with 5% threshold."""
         result = MetricsEngine.compute_price_trend(prices)
-        if result["price_trend_7d"] > 0.05:
+        trend = (prices[-1] - prices[0]) / prices[0]  # unrounded
+        if trend > 0.05:
             assert result["trend_direction"] == "up"
-        elif result["price_trend_7d"] < -0.05:
+        elif trend < -0.05:
             assert result["trend_direction"] == "down"
         else:
             assert result["trend_direction"] == "stable"
