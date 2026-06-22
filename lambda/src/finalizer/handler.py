@@ -139,21 +139,27 @@ def handle(event: dict, context: Any) -> dict:
 def _read_all_derived_metrics(date: str, netuids: list[int]) -> dict[int, dict]:
     """Read derived metrics for all subnets from S3.
 
-    Falls back to yesterday's data when today's file doesn't exist yet
-    (daily collection schedules are spread across 24h, so some subnets
-    haven't collected by the time the Finalizer runs).
+    Falls back to previous days' data (up to 7 days) when today's file
+    doesn't exist yet. This handles both normal schedule timing gaps and
+    multi-day outages.
 
     Uses ThreadPoolExecutor for parallel S3 reads.
     """
     from concurrent.futures import ThreadPoolExecutor
     from datetime import datetime, timedelta
-    yesterday = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    today_dt = datetime.strptime(date, "%Y-%m-%d")
+    fallback_dates = [(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
 
     def _read_one(netuid: int) -> tuple[int, dict | None]:
         path = _storage.get_date_path("derived/metrics", date, netuid)
         data = _storage.read_snapshot(path)
         if data is None:
-            path = _storage.get_date_path("derived/metrics", yesterday, netuid)
+            for fallback in fallback_dates:
+                path = _storage.get_date_path("derived/metrics", fallback, netuid)
+                data = _storage.read_snapshot(path)
+                if data is not None:
+                    break
             data = _storage.read_snapshot(path)
         return (netuid, data)
 
