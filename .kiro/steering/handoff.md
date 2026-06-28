@@ -221,11 +221,22 @@ lambda/src/
 
 ## What's Next (Post-Development)
 
-### Deployment: COMPLETE ✅ (2026-05-17)
-- Stack deployed to AWS account 651484323929 (us-east-1)
-- First live run: 129 subnets collected, 128 processed, rankings generated
-- CloudFront URL: `https://dkfh19zkgqq18.cloudfront.net`
-- All resources within free tier ($0/month validated)
+### Production Status: PAUSED (2026-06-28)
+
+**Action taken**: All EventBridge rules disabled to prevent free tier overage.
+
+- HourlyDiscovery (every 1h) → **DISABLED**
+- DailyFinalizer (06:00 UTC) → **DISABLED**
+- DailyFinalizerEvening (18:00 UTC) → **DISABLED**
+- MarketObserverSchedule (every 60 min) → **DISABLED**
+
+**What's still deployed**: All Lambda functions, DynamoDB table, S3 buckets, Lambdas can be manually invoked.
+
+**To resume**: Uncomment the four `events.Rule()` blocks in `cdk/stacks/pipeline_stack.py` (lines 276-301 and 368-373) and run `./scripts/deploy.sh`.
+
+**Why this happened**: At 129 subnets with Finalizer running twice daily + Market Observer running hourly + Discovery hourly (which seeds ~100 per-subnet schedules), Lambda invocations exceeded 1M/month free tier by ~3-4x.
+
+### Deployment: COMPLETE ✅ (2026-05-17, paused 2026-06-28)
 
 ### Architecture Decision 18: Independent Subnet Refresh (FULLY IMPLEMENTED)
 - All phases complete: self-scheduling loops, Discovery Lambda, Aggregator invocation, documentation overhaul
