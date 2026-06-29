@@ -292,12 +292,13 @@ lambda/src/
 5. **Static repo mappings rot fast.** 38-56% of community-maintained Bittensor repo links are dead within months. Always validate URLs on use.
 
 #### Current Production State:
-- Pipeline: 129 subnets collected once daily, rankings generated twice daily (06:00 + 18:00 UTC)
-- Market Observer: running every 60 min, accumulating price/pool history
-- Researcher: deployed, researches repos on 7-day cycle via Discovery
-- Rankings: live at https://dkfh19zkgqq18.cloudfront.net (17 fields, 129 subnets)
+- Pipeline: **PAUSED** (2026-06-29). See `kb/runbook-pipeline-pause-resume.md` for full details and re-enable instructions.
+- Last data: 2026-06-29 06:00 UTC (129 subnets, rankings valid)
+- Rankings: static at https://dkfh19zkgqq18.cloudfront.net (data frozen at pause date)
+- All Lambdas deployed, can be invoked manually
+- Steady-state cost was 8% of free tier; spike (June 18-21) caused 13% overage
+- Resume target: July 1 (free tier resets monthly)
 - Tests: 242 passing
-- Cost: ~31K/400K GB-sec monthly (8% of free tier)
 - Tech debt: fully resolved (June 17 session)
 
 #### Pending Tasks (next session):
