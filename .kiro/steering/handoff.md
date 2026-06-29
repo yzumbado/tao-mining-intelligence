@@ -80,7 +80,7 @@ The user (or Kiro agent) reads our `rankings.json` and makes decisions like:
 ```
 Discovery Lambda (hourly safety net)
     ├── Queries chain for active subnets
-    ├── Checks each subnet's processed_at for staleness (>26h)
+    ├── Checks each subnet's collected_at/processed_at for staleness (>26h)
     └── Creates EventBridge schedules for new/stale subnets
                 │
                 ▼
@@ -107,7 +107,7 @@ Processor Lambda (one invocation per subnet)
 Finalizer Lambda (twice daily: 06:00 + 18:00 UTC via EventBridge)
     ├── Reads ALL derived metrics from S3 (today + yesterday fallback)
     ├── Parallel reads via ThreadPoolExecutor (16 workers)
-    ├── Generates rankings (17 fields per subnet, 129 subnets)
+    ├── Generates rankings (20 fields per subnet, 129 subnets)
     ├── Generates staking rankings (per-subnet delegate_take)
     ├── Generates daily briefing (alerts, new subnets)
     ├── Generates HTML site → S3 → CloudFront
@@ -141,7 +141,7 @@ The SubnetCollector is the completed reference for how Lambda handlers should be
 - **Self-scheduling per-subnet loops** (AD18) — each subnet refreshes independently at daily cadence
 - **EventBridge Scheduler one-time schedules** — self-cleaning, exact timing, no orchestrator in hot path
 - **Discovery Lambda** (hourly) — safety net for new/stale subnets, not a coordinator
-- **Rankings as live view** — recomputed after each subnet update, not gated on "all complete"
+- **Rankings generated twice daily** — recomputed at 06:00 + 18:00 UTC from all available derived metrics
 - **Two S3 buckets** — private data + CloudFront-only site
 - **DynamoDB single-table** with split profiles (400KB limit)
 - **Jinja2 + Tailwind CSS** (not MkDocs) — direct HTML generation
@@ -246,8 +246,8 @@ lambda/src/
 
 ### Completed:
 - ✅ All 5 development phases complete (SDK validation → core infra → metrics → handlers → site/deploy)
-- ✅ 242 tests passing (property, unit, integration, CDK)
-- ✅ 17 metric algorithms, all cross-validated against live chain
+- ✅ 264 tests passing (property, unit, integration, CDK)
+- ✅ 17 metric algorithms + price trends, all cross-validated against live chain
 - ✅ Security hardening, SNS alerting, conformance post-conditions
 - ✅ AD18 independent refresh fully implemented (old batch model removed)
 
@@ -280,7 +280,7 @@ lambda/src/
 #### Major Accomplishments:
 - **APY formula finalized** — switched to simple APR (`daily_rate × 365 × 100`). No compound, no threshold, no overflow possible. Validated against all 129 live subnets: max 2787%, median 93%.
 - **Self-mining risk fixed** — tightened thresholds (diversity <10%, coldkey overlap ≥50% of validators). 98/129 false positives → 11/129 correctly flagged.
-- **Market Observer deployed and cleaned** — captures price + pool_tao every 10 min for all 129 subnets. Stripped dead alpha_out/pool_alpha fields.
+- **Market Observer deployed and cleaned** — captures price + pool_tao every 60 min for all 129 subnets. Stripped dead alpha_out/pool_alpha fields.
 - **Stage 2 RESEARCH complete and deployed** — SubnetResearcher Lambda live, 22 repos mapped, CDK wired, Discovery staleness check working.
 - **Full audit completed** — all docs synced with code, stale tasks updated, dead code annotated.
 
@@ -330,7 +330,7 @@ lambda/src/
 # If setting up fresh: /opt/homebrew/bin/python3.12 -m venv .venv
 
 source .venv/bin/activate
-.venv/bin/pytest tests/ -v          # All 242 tests
+.venv/bin/pytest tests/ -v          # All 264 tests
 .venv/bin/pytest tests/properties/  # Property tests only
 .venv/bin/pytest tests/unit/        # Unit tests only
 .venv/bin/pytest tests/integration/ # E2E integration

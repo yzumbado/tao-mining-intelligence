@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Collect per-UID and per-hotkey chain data that's too query-intensive for the SubnetCollector (which runs per-subnet every 20-240 min). DeepCollector runs once daily and captures the full network graph.
+Collect per-UID and per-hotkey chain data that's too query-intensive for the SubnetCollector (which runs per-subnet once daily). DeepCollector runs once daily and captures the full network graph.
 
 ## Architecture
 

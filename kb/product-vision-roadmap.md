@@ -25,13 +25,13 @@ to maximize net TAO yield with minimal human intervention.
 │                                                                   │
 │  Stage 1: COLLECT ✅ (DONE)                                      │
 │  │  On-chain data, metrics, rankings                             │
-│  │  Self-refreshing every 20-72 min per subnet                   │
+│  │  Once daily per subnet, rankings twice daily                  │
 │  ▼                                                               │
-│  Stage 2: RESEARCH (NEXT)                                        │
+│  Stage 2: RESEARCH ✅ (DONE)                                     │
 │  │  Subnet requirements, model types, hardware needs             │
-│  │  GitHub scraping, code analysis, difficulty classification    │
+│  │  GitHub scraping, deterministic parsing, 7-day refresh        │
 │  ▼                                                               │
-│  Stage 3: STRATEGIZE                                             │
+│  Stage 3: STRATEGIZE (NEXT)                                      │
 │  │  Given my resources, where to deploy?                         │
 │  │  Mine vs validate, portfolio optimization                     │
 │  ▼                                                               │
@@ -59,16 +59,16 @@ to maximize net TAO yield with minimal human intervention.
 
 ### Stage 1: COLLECT ✅ Complete
 
-**Status**: Deployed, autonomous, 129 subnets self-scheduling
+**Status**: Deployed, autonomous, 129 subnets self-scheduling (currently paused — resume July 1)
 
 **What it produces**:
-- Per-subnet metrics: ROI, yield, competition, churn, risk, taoflow health
-- Rankings sorted by attractiveness (live view, updates every subnet refresh)
+- Per-subnet metrics: ROI, yield, competition, churn, risk, taoflow health, price trends
+- Rankings sorted by attractiveness (20 fields, generated twice daily)
 - Agent-consumable endpoints (llms.txt, rankings.json, metadata.json)
 - Historical snapshots (append-only S3, full time-series)
 
-**Infrastructure**: Lambda (4 functions), DynamoDB, S3, EventBridge Scheduler, CloudFront
-**Cost**: $0/month (free tier)
+**Infrastructure**: Lambda (7 functions), DynamoDB, S3, EventBridge Scheduler, CloudFront
+**Cost**: ~$0/month (8% of free tier at steady state)
 
 ---
 
@@ -275,7 +275,7 @@ and capital allocation, while the machine handles discovery, execution, and opti
 - What data do we already have vs what we'd need to collect?
 - How to show time dimension (flows changing over days/weeks)?
 
-**Data we already have**: Per-subnet emission, stake, alpha prices, validator dividends, miner incentives. All refreshing every 20-72 min.
+**Data we already have**: Per-subnet emission, stake, alpha prices, validator dividends, miner incentives. All refreshing once daily with 7-day price history from Market Observer.
 
 **Priority**: HIGH — unlocks intuitive understanding of where TAO is accumulating.
 

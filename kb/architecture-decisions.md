@@ -429,7 +429,7 @@ The Finalizer only checks cycle-level completion (`subnets_complete >= subnets_t
 - Cycle counter increment is NOT wrapped — if it fails, the processing result reflects the error
 - Future: add a "state reconciliation" step at cycle start that resets stale per-subnet states
 
-5. ~~**Cost budget**~~: RESOLVED — $0/month. All services within always-free tier. Container Image Lambda solves SDK size. SQS/SNS/CloudFront/Parameter Store all have generous free tiers.
+5. ~~**Cost budget**~~: RESOLVED — ~$0/month. All services within always-free tier (8% of GB-seconds budget at steady state). Container Image Lambda solves SDK size. SQS/SNS/CloudFront/Parameter Store all have generous free tiers.
 
 ---
 
@@ -556,6 +556,6 @@ EventBridge (hourly) → Orchestrator → Collection Queue (SQS)
 
 **Context**: First live deployment proved the batch cycle model (daily, all-or-nothing) creates artificial coupling. One subnet failure blocks output for all 128 others.
 
-**Decision**: Replace batch cycle with self-scheduling independent subnet loops using EventBridge Scheduler one-time schedules. Each subnet refreshes at its own tempo cadence, capped at configurable max staleness (default 4 hours). Rankings recomputed after each subnet update.
+**Decision**: Replace batch cycle with self-scheduling independent subnet loops using EventBridge Scheduler one-time schedules. Each subnet refreshes on a fixed 24h cadence, capped at configurable max staleness (default 26 hours). Rankings recomputed twice daily (06:00 + 18:00 UTC).
 
 **Key changes**: Remove Orchestrator from hot path, remove cycle gate in Finalizer, add Discovery Lambda as hourly safety net, add `llms.txt` for agent consumption.

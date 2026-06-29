@@ -8,10 +8,10 @@ A serverless pipeline that autonomously collects Bittensor subnet data, computes
 
 **Key properties**:
 - 129 subnets collected and processed autonomously
-- No subnet older than 4 hours (configurable)
+- Each subnet refreshes once per day (fixed 24h cadence)
 - Self-healing: dead loops recover within 1 hour via Discovery Lambda
-- Rankings recomputed after every subnet update (live view, not daily batch)
-- $0/month (all AWS free tier)
+- Rankings recomputed twice daily (06:00 + 18:00 UTC)
+- ~$0/month (8% of free tier at steady state)
 
 ### Design Principles
 
@@ -28,6 +28,7 @@ A serverless pipeline that autonomously collects Bittensor subnet data, computes
 - On-chain metagraph collection for all active subnets
 - Registration cost, hyperparameters, alpha token price, pool liquidity
 - 17 derived metrics (risk, yield, competitive dynamics, self-mining detection)
+- 7-day price trend analysis (from Market Observer history)
 - Self-scheduling refresh loops via EventBridge Scheduler
 - Static HTML site (Jinja2 + Tailwind CSS) via CloudFront
 - Agent-consumable endpoints (llms.txt, rankings.json, metadata.json)
@@ -49,7 +50,7 @@ A serverless pipeline that autonomously collects Bittensor subnet data, computes
 ```
 Discovery Lambda (hourly safety net)
     ├── Queries chain for active subnets
-    ├── Checks each subnet's processed_at for staleness
+    ├── Checks each subnet's collected_at / processed_at for staleness (>26h)
     └── Creates EventBridge one-time schedules for new/stale subnets
                 │
                 ▼
@@ -61,6 +62,7 @@ SubnetCollector Lambda (one subnet per invocation)
     ├── Collects hyperparameters, alpha price, pool liquidity, reg cost
     ├── Validates (warn on quality issues, don't reject)
     ├── Stores raw snapshot to S3
+    ├── Writes collected_at to DynamoDB (prevents Discovery re-scheduling race)
     └── Sends SQS message → Processing Queue
                 │
                 ▼
@@ -69,16 +71,15 @@ Processor Lambda (one subnet per invocation)
     ├── Converts emission from per-tempo to per-day
     ├── Runs MetricsEngine (17 pure functions) on the data
     ├── Stores derived metrics to S3
-    ├── Writes split profiles to DynamoDB
+    ├── Writes split profiles to DynamoDB (with processed_at)
     ├── Stores daily stake/emission totals (for Net TAO Flow)
-    ├── Invokes Finalizer (async) → rankings recompute
-    └── Creates next EventBridge schedule (tempo-based, self-perpetuating)
+    └── Creates next EventBridge schedule (+24h, self-perpetuating)
                 │
                 ▼
-Finalizer Lambda (aggregator, invoked after each subnet)
-    ├── Reads ALL current profiles from DynamoDB
-    ├── Computes Net TAO Flow EMA from stake history
-    ├── Generates rankings (risk-adjusted attractiveness score)
+Finalizer Lambda (twice daily: 06:00 + 18:00 UTC via EventBridge)
+    ├── Reads ALL derived metrics from S3 (today + yesterday fallback)
+    ├── Parallel reads via ThreadPoolExecutor (16 workers)
+    ├── Generates rankings (20 fields per subnet, 129 subnets)
     ├── Generates daily briefing (rolling 24h changes)
     ├── Generates HTML site (Jinja2 + Tailwind)
     ├── Uploads to S3 → CloudFront
@@ -110,15 +111,16 @@ Each subnet is a self-perpetuating loop:
 ```
 SubnetCollector → SQS → Processor → [creates next EventBridge schedule]
                                             │
-                                            └── Schedule fires after (tempo ÷ 12) seconds
+                                            └── Schedule fires after 24 hours
                                                     │
                                                     └── SubnetCollector (same subnet) → ...
 ```
 
-The Processor computes the next refresh time from the subnet's tempo hyperparameter:
-- Fast subnets (tempo=99, ~20 min): refresh every ~20 min
-- Slow subnets (tempo=360, ~72 min): refresh every ~72 min
-- Max staleness cap (configurable, default 4h): Discovery Lambda re-seeds if exceeded
+The Processor schedules the next collection at a fixed +24h delay (cost optimization).
+Previous design used tempo-based refresh (20-240 min) but this exceeded free tier.
+
+- Max staleness cap (configurable, default 26h): Discovery Lambda re-seeds if exceeded
+- `collected_at` written by Collector prevents Discovery from re-scheduling during processing
 
 EventBridge Scheduler one-time schedules with `ActionAfterCompletion=DELETE` — self-cleaning, no accumulation.
 
@@ -144,7 +146,7 @@ EventBridge Scheduler one-time schedules with `ActionAfterCompletion=DELETE` —
 
 **Logic**:
 1. Query chain for all active netuids
-2. For each subnet, check `processed_at` in DynamoDB
+2. For each subnet, check `collected_at`, `processed_at`, and `last_updated` in DynamoDB (uses most recent)
 3. If subnet is new (no record) or stale (> max_staleness_hours): create EventBridge one-time schedule
 4. Update ACTIVE_SUBNETS config
 
@@ -160,6 +162,9 @@ EventBridge Scheduler one-time schedules with `ActionAfterCompletion=DELETE` —
 - Registration cost
 - Chain metadata (14 Tier 1 fields: SubnetEmaTaoFlow, SubnetVolume, etc.)
 
+**Side effects**:
+- Writes `collected_at` to DynamoDB PROFILE#basic (prevents Discovery re-scheduling race)
+
 ### Processor Lambda
 
 **Trigger**: SQS (process-subnet queue, batch=1)
@@ -168,18 +173,17 @@ EventBridge Scheduler one-time schedules with `ActionAfterCompletion=DELETE` —
 **Key responsibilities**:
 - Tempo conversion: emission × (7200 / tempo) → daily
 - Run MetricsEngine (17 pure functions)
-- Write split profiles to DynamoDB
+- Write split profiles to DynamoDB (with processed_at)
 - Accumulate daily stake/emission for Net TAO Flow
 - Track hotkeys
-- Invoke Finalizer (async)
-- Schedule next collection (self-perpetuating)
+- Schedule next collection (+24h, self-perpetuating)
 
 ### Finalizer Lambda
 
-**Trigger**: Direct invocation from Processor (async)
+**Trigger**: EventBridge schedule (twice daily: 06:00 + 18:00 UTC)
 **Purpose**: Recompute aggregate outputs from whatever data exists.
 
-**Key property**: Rankings are a "live view" — generated from all current profiles, not gated on "all subnets complete." If 80/129 have processed today, rankings reflect those 80.
+**Key property**: Rankings are generated from all derived metrics in S3 (today + yesterday fallback). Not gated on "all subnets complete" — uses whatever exists.
 
 **Outputs**:
 - `rankings.json` — sorted by attractiveness score
@@ -206,7 +210,7 @@ EventBridge Scheduler one-time schedules with `ActionAfterCompletion=DELETE` —
 10. Competitive Density — earning_miners / max_uids
 11. Emission Trend — direction, change_percent
 12. Staking Yield — net APY for a given stake amount
-13. Alpha APY (1D) — compound annualized alpha yield
+13. Alpha APY (1D) — simple APR (daily_rate × 365 × 100)
 14. Net TAO Flow (EMA) — 30-day smoothed stake flow
 15. Attractiveness Score — risk-adjusted composite [0,1]
 16. Validator Concentration Risk — tiered (critical/high/medium/low/healthy)
@@ -239,13 +243,16 @@ EventBridge Scheduler one-time schedules with `ActionAfterCompletion=DELETE` —
 | PK | SK | Purpose |
 |----|-----|---------|
 | `SUBNET#{netuid}` | `STATE` | Per-subnet FSM: status, processed_at, last_error |
-| `SUBNET#{netuid}` | `PROFILE#basic` | Category, mining style, reward model, gini, top_3 |
+| `SUBNET#{netuid}` | `PROFILE#basic` | Category, mining style, reward model, gini, collected_at, processed_at |
 | `SUBNET#{netuid}` | `PROFILE#winner` | Top-5 miner analysis |
 | `SUBNET#{netuid}` | `PROFILE#validator` | Validator landscape, concentration |
 | `SUBNET#{netuid}` | `PROFILE#intelligence` | Anomalies, strategy observations |
 | `SUBNET#{netuid}` | `HYPERPARAMS` | On-chain hyperparameters |
 | `STAKE_HISTORY#{netuid}#{date}` | — | Daily total stake (for EMA flow) |
 | `EMISSION_HISTORY#{netuid}#{date}` | — | Daily total emission |
+| `CACHE#{netuid}\|MARKET_DATA` | — | Latest alpha_price + pool_tao (Market Observer) |
+| `HISTORY#{netuid}\|{timestamp}` | — | Price time-series (30-day TTL, Market Observer) |
+| `RESEARCH#{netuid}` | `latest` | Stage 2 repo analysis (GPU, model, difficulty) |
 | `CONFIG` | `ACTIVE_SUBNETS` | List of monitored netuids |
 | `CONFIG` | `TRACKED_HOTKEYS` | Watchlist for hotkey tracking |
 | `CONFIG` | `THRESHOLDS` | Tunable parameters |
@@ -312,7 +319,16 @@ Pydantic v2 models (`lambda/src/models/schemas.py`) are the schema definition �
     "attractiveness_score": 0.825,
     "self_mining_risk": 0.0,
     "real_apy_percent": 36.8,
-    "concentration_risk": {"risk": 0.0, "tier": "healthy", "active_validators": 64, "top_1_stake_share": 0.12}
+    "concentration_risk": {"risk": 0.0, "tier": "healthy", "active_validators": 64, "top_1_stake_share": 0.12},
+    "pool_tao_liquidity": 65000.0,
+    "registration_cost_tao": 0.0005,
+    "earning_miners_count": 14,
+    "liquidity_warning": false,
+    "reward_model": "TIERED",
+    "gini_coefficient": 0.48,
+    "price_trend_7d": 0.05,
+    "price_volatility_7d": 0.012,
+    "trend_direction": "up"
   }
 ]
 ```
@@ -336,7 +352,7 @@ All algorithms are implemented as pure static methods on `MetricsEngine` in `lam
 **Do not duplicate algorithm pseudocode here.** The living reference is auto-generated:
 ```bash
 python scripts/generate_metrics_reference.py
-# Outputs: kb/metrics-reference.md (17 metrics documented)
+# Outputs: kb/metrics-reference.md (17 metrics + price trends documented)
 ```
 
 ### Attractiveness Score Formula (key algorithm)
@@ -355,15 +371,20 @@ score = raw × (1.0 - self_mining_risk)                   # multiplicative penal
 
 ### APY Calculation
 
-Matches TaoYield methodology:
+Simple APR (intentionally NOT compound — see Dead Ends #1 in handoff):
 ```
-daily_yield_rate = (emission_daily × (1 - take_rate)) / alpha_stake
-apy = ((1 + daily_yield_rate)^365 - 1) × 100
+pool_alpha = pool_tao_liquidity / alpha_price
+daily_yield_rate = total_validator_emission_daily / pool_alpha
+apr = daily_yield_rate × 365 × 100
 
 Guards:
-- total_validator_stake < 100 alpha → return 0 (insufficient data)
-- daily_yield_rate > 1.0 → return 0 (anomalous, TaoYield skips these)
+- pool_alpha < 100 → return 0 (insufficient data / new subnet)
+- pool_tao_liquidity <= 0 or alpha_price <= 0 → return 0
 ```
+
+Note: TaoYield and taostats use compound APY which produces higher numbers
+(~1.2-1.6× ours at typical rates). We report simple APR because Bittensor
+staking does not auto-compound — the user must manually restake.
 
 ---
 
@@ -373,7 +394,7 @@ Stored in DynamoDB (`CONFIG|THRESHOLDS`, `CONFIG|REFRESH_POLICY`). Editable via 
 
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
-| max_staleness_hours | 4 | Discovery re-seeds if subnet older than this |
+| max_staleness_hours | 26 | Discovery re-seeds if subnet older than this |
 | min_refresh_interval_minutes | 15 | Floor on refresh frequency |
 | briefing_emission_change_pct | 1.0 | Alert threshold for emission changes |
 | wta_top3_threshold | 0.70 | Top-3 concentration for WTA classification |
@@ -407,16 +428,18 @@ Every significant operation wrapped in `instrument(component, operation, netuid)
 
 ---
 
-## Future State (Stage 2+)
+## Future State (Stage 3+)
+
+### Subnet Researcher — DEPLOYED ✅ (Stage 2)
+Deterministic GitHub repo analysis: extracts GPU requirements, model type, difficulty.
+Runs on 7-day refresh cycle, triggered by Discovery Lambda.
+LLM enrichment via S3 drop-box is Phase 3 (backlog).
 
 ### DeepCollector Lambda
 Per-UID and per-hotkey chain data collection. Historical dataset for pattern detection. Spec at `kb/backlog-deep-collector.md`.
 
-### Subnet Researcher (LLM-powered)
-Bedrock-based analysis of subnet code repositories. Extracts: task definition, scoring function, hardware requirements, competitive dynamics. Produces structured Subnet Intelligence Cards.
-
-### Taoflow Health Activation
-Currently dormant (always returns HEALTHY). Activates automatically once 7+ days of stake+emission history accumulates. Expected: June 8, 2026.
+### Taoflow Health
+Currently returns HEALTHY for all subnets (correct: emissions are EMA-smoothed and rarely change >1%/day). Would activate with 7+ days of stake history showing sustained negative flow.
 
 ### Chain Event Processing
 Batch Lambda (every 15 min) queries historical blocks for: NeuronRegistered, StakeAdded/Removed, NetworkAdded/Removed, HotkeySwapped. $0 (Lambda free tier).

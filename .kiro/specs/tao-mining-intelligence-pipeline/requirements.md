@@ -2,13 +2,13 @@
 
 ## Introduction
 
-The TAO Mining Intelligence Pipeline is an autonomous data collection and processing system for Bittensor subnet mining/validating intelligence. It collects on-chain data from all active subnets via self-scheduling independent loops, computes 17 derived metrics, and serves structured rankings via CloudFront for TAO accumulation strategy decisions.
+The TAO Mining Intelligence Pipeline is an autonomous data collection and processing system for Bittensor subnet mining/validating intelligence. It collects on-chain data from all active subnets via self-scheduling independent loops, computes 17+ derived metrics, and serves structured rankings (20 fields) via CloudFront for TAO accumulation strategy decisions.
 
 **Primary objective**: TAO accumulation through mining or validating — not USD conversion.
 
-**Architecture model**: Self-scheduling independent subnet loops (AD18). Each subnet refreshes at its own tempo cadence. No batch orchestration, no central coordinator in the hot path.
+**Architecture model**: Self-scheduling independent subnet loops (AD18). Each subnet refreshes once per day (fixed 24h cadence). No batch orchestration, no central coordinator in the hot path.
 
-**Infrastructure**: AWS free tier ($0/month) — Lambda (Container Image), DynamoDB, S3, EventBridge Scheduler, CloudFront, SQS, SNS.
+**Infrastructure**: AWS Lambda free tier (~$0/month at steady state) — Lambda (Container Image), DynamoDB, S3, EventBridge Scheduler, CloudFront, SQS, SNS.
 
 ---
 
@@ -19,7 +19,7 @@ The TAO Mining Intelligence Pipeline is an autonomous data collection and proces
 | Pipeline | End-to-end system: Discovery → SubnetCollector → Processor → Finalizer |
 | SubnetCollector | Lambda that collects raw data for one subnet per invocation |
 | Processor | Lambda that computes derived metrics for one subnet per invocation |
-| Finalizer | Lambda that recomputes aggregate rankings after each subnet update |
+| Finalizer | Lambda that recomputes aggregate rankings twice daily (06:00 + 18:00 UTC) |
 | Discovery Lambda | Hourly safety net that detects new/stale subnets |
 | Metagraph | Complete state of all neurons in a subnet at a point in time |
 | Neuron | A miner or validator registered on a subnet |
@@ -49,27 +49,27 @@ The TAO Mining Intelligence Pipeline is an autonomous data collection and proces
 
 1. A Discovery Lambda SHALL run hourly and query the chain for active netuids.
 2. New subnets (no DynamoDB record) SHALL get an EventBridge schedule created immediately.
-3. Stale subnets (processed_at > max_staleness_hours) SHALL be re-seeded.
-4. max_staleness_hours SHALL be configurable in DynamoDB (default: 4).
+3. Stale subnets (collected_at AND processed_at both > max_staleness_hours) SHALL be re-seeded.
+4. max_staleness_hours SHALL be configurable in DynamoDB (default: 26).
 
 ### R3: Derived Metrics Computation
 
 **Story**: Raw snapshots are processed into actionable intelligence metrics.
 
-1. The Processor SHALL compute 17 metrics per subnet (see design.md § MetricsEngine).
+1. The Processor SHALL compute 17+ metrics per subnet (see design.md § MetricsEngine).
 2. Emission values SHALL be converted from per-tempo to per-day before metric computation.
 3. Derived metrics SHALL be stored in S3 at `derived/metrics/{date}/{netuid}.json`.
 4. Split profiles SHALL be written to DynamoDB (basic, winner, validator, intelligence).
 5. All metric functions SHALL be pure (no AWS calls, no side effects).
 
-### R4: Rankings as Live View
+### R4: Rankings Generation
 
-**Story**: Rankings reflect the latest available data without waiting for all subnets.
+**Story**: Rankings reflect the latest available data, generated on a twice-daily schedule.
 
-1. The Finalizer SHALL be invoked after each subnet's Processor completes.
-2. Rankings SHALL be computed from whatever derived metrics exist at invocation time.
+1. The Finalizer SHALL run twice daily (06:00 + 18:00 UTC) via EventBridge schedule.
+2. Rankings SHALL be computed from whatever derived metrics exist in S3 (today + yesterday fallback).
 3. Rankings SHALL be sorted by risk-adjusted attractiveness score (descending).
-4. Each ranking entry SHALL include: netuid, net_tao_yield, days_to_recoup, attractiveness_score, self_mining_risk, real_apy_percent, concentration_risk, competitive_density, emission_trend, alpha_price.
+4. Each ranking entry SHALL include 20 fields: netuid, net_tao_yield, days_to_recoup, thirty_day_projection, competitive_density, emission_trend, alpha_price, attractiveness_score, self_mining_risk, real_apy_percent, concentration_risk, pool_tao_liquidity, registration_cost_tao, earning_miners_count, liquidity_warning, reward_model, gini_coefficient, price_trend_7d, price_volatility_7d, trend_direction.
 
 ### R5: Daily Briefing
 
@@ -87,12 +87,12 @@ The TAO Mining Intelligence Pipeline is an autonomous data collection and proces
 
 ### R7: APY Calculation
 
-**Story**: Real annualized yield is computed matching industry methodology.
+**Story**: Real annualized yield is computed using simple APR.
 
-1. APY SHALL use compound annualization: `((1 + daily_rate)^365 - 1) × 100`.
-2. Subnets with total_validator_stake < 100 alpha SHALL return APY = 0 (insufficient data).
-3. Subnets with daily_yield_rate > 1.0 SHALL return APY = 0 (anomalous data).
-4. APY is alpha yield (not TAO yield) — matches TaoYield/taostats methodology.
+1. APY SHALL use simple APR: `daily_yield_rate × 365 × 100`.
+2. Subnets with pool_alpha < 100 SHALL return APY = 0 (insufficient data).
+3. APY uses validator-only emission (50% of total) as numerator — this is what stakers earn.
+4. APY is alpha yield (not TAO yield) — intentionally lower than TaoYield/taostats which use compound APY.
 
 ### R8: Net TAO Flow Tracking
 

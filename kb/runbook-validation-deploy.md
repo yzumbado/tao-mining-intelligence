@@ -2,7 +2,7 @@
 
 ## What This System Does
 
-The pipeline collects data from the Bittensor blockchain every 20-240 minutes, computes metrics (yield, APY, risk), and publishes rankings to CloudFront. Before deploying code changes, we validate that our output matches the chain's ground truth.
+The pipeline collects data from the Bittensor blockchain once daily per subnet, computes metrics (yield, APY, risk), and publishes rankings twice daily to CloudFront. Before deploying code changes, we validate that our output matches the chain's ground truth.
 
 ---
 
@@ -11,7 +11,7 @@ The pipeline collects data from the Bittensor blockchain every 20-240 minutes, c
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ Step 1/5: Unit Tests (pytest)                               │
-│   • 205 tests — structural correctness                      │
+│   • 264 tests — structural correctness                      │
 │   • If FAIL → deploy blocked                                │
 ├─────────────────────────────────────────────────────────────┤
 │ Step 2/5: Chain Validation Gate (HARD — blocks deploy)      │
@@ -154,10 +154,10 @@ python scripts/validate_all_metrics.py
 
 ## Post-Deploy: How Long Until Data Converges
 
-Subnets refresh independently based on their tempo:
-- **Fast subnets** (tempo 12-60): refresh every 20-60 minutes
-- **Slow subnets** (tempo 360+): refresh every 2-4 hours
-- **Full convergence**: all 129 subnets refreshed within ~4 hours max
+Subnets refresh independently on a fixed 24h cadence:
+- **All subnets**: once per day (self-scheduling via EventBridge Scheduler)
+- **Rankings**: regenerated twice daily at 06:00 + 18:00 UTC
+- **Max staleness**: 26h (Discovery re-seeds if exceeded)
 
 To monitor convergence:
 ```bash
