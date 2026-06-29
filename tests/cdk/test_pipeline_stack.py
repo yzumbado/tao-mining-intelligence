@@ -92,13 +92,17 @@ class TestLambdaConfiguration:
 
 
 class TestEventBridge:
-    """Assert EventBridge schedule is correct."""
+    """Assert EventBridge schedule configuration.
 
-    def test_hourly_discovery_schedule(self):
+    NOTE: EventBridge rules are currently DISABLED (commented out in CDK)
+    to stay within Lambda free tier. See kb/runbook-pipeline-pause-resume.md.
+    This test verifies that no rules exist while paused.
+    When re-enabling, flip the assertion back to has_resource_properties.
+    """
+
+    def test_no_eventbridge_rules_while_paused(self):
         template = _get_template()
-        template.has_resource_properties("AWS::Events::Rule", {
-            "ScheduleExpression": "rate(1 hour)",
-        })
+        template.resource_count_is("AWS::Events::Rule", 0)
 
 
 class TestSQS:

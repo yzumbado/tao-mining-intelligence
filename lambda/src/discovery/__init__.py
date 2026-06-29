@@ -115,16 +115,36 @@ def _get_profile(netuid: int) -> Optional[dict]:
 
 
 def _is_stale(profile: dict, max_staleness_hours: float) -> bool:
-    """Check if a profile is older than max_staleness_hours."""
-    processed_at = profile.get("processed_at") or profile.get("last_updated")
-    if not processed_at:
+    """Check if a profile is older than max_staleness_hours.
+
+    Checks BOTH processed_at (set by Processor after metrics computation)
+    and collected_at (set by Collector immediately after S3 storage).
+    If either is fresh, the subnet is NOT stale. This prevents re-scheduling
+    subnets that were collected but are still awaiting processing.
+    """
+    # Use the most recent of collected_at and processed_at
+    candidates = [
+        profile.get("collected_at"),
+        profile.get("processed_at"),
+        profile.get("last_updated"),
+    ]
+
+    most_recent = None
+    for ts_str in candidates:
+        if not ts_str:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(ts_str))
+            if most_recent is None or ts > most_recent:
+                most_recent = ts
+        except (ValueError, TypeError):
+            continue
+
+    if most_recent is None:
         return True
-    try:
-        ts = datetime.fromisoformat(str(processed_at))
-        age_hours = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-        return age_hours > max_staleness_hours
-    except (ValueError, TypeError):
-        return True
+
+    age_hours = (datetime.now(timezone.utc) - most_recent).total_seconds() / 3600
+    return age_hours > max_staleness_hours
 
 
 

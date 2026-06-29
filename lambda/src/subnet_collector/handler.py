@@ -84,6 +84,11 @@ async def _async_handle(event: dict, context: Any) -> dict:
             await _collect_registration_cost(sub, netuid, date)
             await _collect_subnet_chain_data(sub, netuid, date)
 
+        # Mark collection timestamp in DynamoDB BEFORE publishing SQS.
+        # This prevents Discovery from re-scheduling this subnet while
+        # the Processor is still working (race condition that caused 20x spikes).
+        _mark_collected(netuid, date)
+
         # Publish processing message
         _publish_processing_message(netuid, date, cycle_id, trace_id)
 
@@ -312,6 +317,21 @@ async def _collect_subnet_chain_data(sub, netuid: int, date: str) -> None:
         _storage.store_snapshot(_storage.get_date_path("raw/chain-data", date, netuid), data)
     except Exception as e:
         logger.warning(f"Chain data collection failed for netuid={netuid}: {e}")
+
+
+def _mark_collected(netuid: int, date: str) -> None:
+    """Write collected_at timestamp to DynamoDB immediately after collection.
+
+    This tells Discovery that this subnet was recently collected, even if the
+    Processor hasn't run yet. Prevents the race condition where Discovery
+    re-creates schedules for subnets that are merely awaiting processing.
+    """
+    try:
+        _state_manager.mark_subnet_collected(netuid, date)
+    except Exception as e:
+        # Non-fatal: if this fails, Discovery might re-schedule us, but
+        # the Processor will still update processed_at eventually.
+        logger.warning(f"Failed to mark collected_at for SN{netuid}: {e}")
 
 
 def _publish_processing_message(netuid: int, date: str, cycle_id: str, trace_id: str) -> None:

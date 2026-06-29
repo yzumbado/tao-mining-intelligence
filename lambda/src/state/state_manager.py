@@ -740,3 +740,24 @@ class StateManager:
         except Exception as e:
             logger.warning(f"DynamoDB read failed (returning None): {e}")
             return None
+
+
+    def mark_subnet_collected(self, netuid: int, date: str) -> None:
+        """Write collected_at timestamp to the basic profile.
+
+        Called by SubnetCollector immediately after successful S3 storage,
+        BEFORE publishing the SQS message to Processor. This prevents
+        Discovery from re-scheduling subnets that are awaiting processing.
+
+        Uses UpdateItem so it works even if the profile doesn't exist yet
+        (first-ever collection of a new subnet).
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        self._table.update_item(
+            Key={"PK": f"SUBNET#{netuid}", "SK": "PROFILE#basic"},
+            UpdateExpression="SET collected_at = :ts, last_collection_date = :d",
+            ExpressionAttributeValues={
+                ":ts": now,
+                ":d": date,
+            },
+        )
