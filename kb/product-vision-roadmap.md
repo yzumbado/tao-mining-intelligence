@@ -241,7 +241,7 @@ a miner — and by then, you have high confidence it will be profitable.
 
 ## Success Metrics
 
-- **Stage 1**: All 129 subnets refreshing within 4h staleness ✅
+- **Stage 1**: All 129 subnets refreshing daily (26h staleness cap) ✅
 - **Stage 2**: 80%+ of subnets have research profiles
 - **Stage 3**: Strategy produces actionable recommendations weekly
 - **Stage 4**: First miner deployed from automated pipeline

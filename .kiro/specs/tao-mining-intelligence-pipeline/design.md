@@ -2,7 +2,7 @@
 
 ## Overview
 
-A serverless pipeline that autonomously collects Bittensor subnet data, computes mining/validating intelligence metrics, and serves structured rankings via CloudFront. Each subnet refreshes independently at its own tempo cadence — no batch orchestration, no central coordinator in the hot path.
+A serverless pipeline that autonomously collects Bittensor subnet data, computes mining/validating intelligence metrics, and serves structured rankings via CloudFront. Each subnet refreshes independently once per day via self-scheduling loops — no batch orchestration, no central coordinator in the hot path.
 
 **Primary goal**: TAO accumulation through mining or validating — not USD.
 
@@ -34,8 +34,8 @@ A serverless pipeline that autonomously collects Bittensor subnet data, computes
 - Agent-consumable endpoints (llms.txt, rankings.json, metadata.json)
 - Conformance post-conditions (Phase A inline checks)
 
-**Out of scope (Stage 2+)**:
-- LLM-powered Subnet Researcher (code analysis, GitHub scraping)
+**Out of scope (Stage 3+)**:
+- LLM-powered Subnet Researcher enrichment (deterministic parsing deployed; LLM analysis deferred)
 - Discord/YouTube intelligence
 - DeepCollector (per-UID and per-hotkey historical data)
 - Real-time chain event streaming

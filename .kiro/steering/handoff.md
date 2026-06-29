@@ -232,9 +232,9 @@ lambda/src/
 
 **What's still deployed**: All Lambda functions, DynamoDB table, S3 buckets, Lambdas can be manually invoked.
 
-**To resume**: Uncomment the four `events.Rule()` blocks in `cdk/stacks/pipeline_stack.py` (lines 276-301 and 368-373) and run `./scripts/deploy.sh`.
+**To resume**: See `kb/runbook-pipeline-pause-resume.md` for step-by-step instructions.
 
-**Why this happened**: At 129 subnets with Finalizer running twice daily + Market Observer running hourly + Discovery hourly (which seeds ~100 per-subnet schedules), Lambda invocations exceeded 1M/month free tier by ~3-4x.
+**Why this happened**: A 3-day invocation spike (June 18-21) caused by Discovery re-scheduling race condition pushed GB-seconds to 450K/400K (13% over free tier). Steady state is 32K GB-s/month (8%). See runbook for root cause analysis.
 
 ### Deployment: COMPLETE ✅ (2026-05-17, paused 2026-06-28)
 
@@ -298,7 +298,7 @@ lambda/src/
 - All Lambdas deployed, can be invoked manually
 - Steady-state cost was 8% of free tier; spike (June 18-21) caused 13% overage
 - Resume target: July 1 (free tier resets monthly)
-- Tests: 242 passing
+- Tests: 264 passing
 - Tech debt: fully resolved (June 17 session)
 
 #### Pending Tasks (next session):

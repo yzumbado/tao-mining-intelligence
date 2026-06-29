@@ -63,7 +63,7 @@ When building a new feature or fixing a bug, follow this order:
 1. **POC against live chain** (5 min) — verify your assumptions about field values, API behavior, or formula correctness BEFORE writing production code
 2. **Write property test** — define what "correct" means (bounds, monotonicity, edge cases)
 3. **Implement** — write the minimum code to pass the test
-4. **Run all tests** — `pytest tests/ -q` (205 must pass)
+4. **Run all tests** — `pytest tests/ -q` (264 must pass)
 5. **Cross-validate** — `python scripts/validate_all_metrics.py` (compare against live chain)
 6. **Update docs** — if you changed a metric, run `python scripts/generate_metrics_reference.py`
 7. **Commit** — following the structured commit format below
