@@ -184,6 +184,92 @@ class TestCollectorMarkCollected:
         mod._mark_collected(44, "2026-06-29")
 
 
+class TestProcessorPreservesCollectedAt:
+    """Test that Processor's _write_split_profiles preserves collected_at."""
+
+    def test_collected_at_included_when_present_in_snapshot(self):
+        """Processor passes collected_at from snapshot metadata to profile."""
+        from src.processor.handler import _write_split_profiles
+        from src.models.enums import RewardModel
+        from unittest.mock import patch
+        from src.models.schemas import Neuron
+
+        neurons = [Neuron(
+            uid=0, hotkey="5ABC", coldkey="5DEF", stake=100.0,
+            incentive=0.5, emission=10.0, consensus=0.8,
+            validator_trust=0.0, dividends=0.0, active=True,
+            alpha_stake=50.0, total_stake=100.0, block_at_registration=1000,
+            delegate_take=0.18,
+        )]
+
+        class FakeVL:
+            active_validators = 10
+            total_validator_stake = 5000.0
+            top_1_stake_share = 0.3
+            top_3_stake_share = 0.6
+            concentrated = False
+            net_tao_yield_per_validator_per_day = 1.0
+            avg_vtrust = 0.9
+            min_vtrust = 0.7
+            avg_delegate_take = 0.18
+
+        with patch("src.processor.handler._state_manager") as mock_sm:
+            _write_split_profiles(
+                netuid=44, neurons=neurons,
+                reward_model=RewardModel.TIERED,
+                gini=0.5, top_3=0.7,
+                validator_landscape=FakeVL(),
+                date="2026-07-01",
+                collected_at="2026-07-01T17:05:00+00:00",
+            )
+
+            # Verify put_item was called with collected_at in basic profile
+            calls = mock_sm.write_subnet_profiles.call_args
+            profiles = calls[0][1]  # second positional arg
+            assert "collected_at" in profiles["basic"]
+            assert profiles["basic"]["collected_at"] == "2026-07-01T17:05:00+00:00"
+
+    def test_collected_at_omitted_when_none(self):
+        """Processor omits collected_at when snapshot doesn't have it (old data)."""
+        from src.processor.handler import _write_split_profiles
+        from src.models.enums import RewardModel
+        from unittest.mock import patch
+        from src.models.schemas import Neuron
+
+        neurons = [Neuron(
+            uid=0, hotkey="5ABC", coldkey="5DEF", stake=100.0,
+            incentive=0.5, emission=10.0, consensus=0.8,
+            validator_trust=0.0, dividends=0.0, active=True,
+            alpha_stake=50.0, total_stake=100.0, block_at_registration=1000,
+            delegate_take=0.18,
+        )]
+
+        class FakeVL:
+            active_validators = 10
+            total_validator_stake = 5000.0
+            top_1_stake_share = 0.3
+            top_3_stake_share = 0.6
+            concentrated = False
+            net_tao_yield_per_validator_per_day = 1.0
+            avg_vtrust = 0.9
+            min_vtrust = 0.7
+            avg_delegate_take = 0.18
+
+        with patch("src.processor.handler._state_manager") as mock_sm:
+            _write_split_profiles(
+                netuid=44, neurons=neurons,
+                reward_model=RewardModel.TIERED,
+                gini=0.5, top_3=0.7,
+                validator_landscape=FakeVL(),
+                date="2026-07-01",
+                collected_at=None,
+            )
+
+            calls = mock_sm.write_subnet_profiles.call_args
+            profiles = calls[0][1]
+            assert "collected_at" not in profiles["basic"]
+
+
 class TestStateManagerMarkCollected:
     """Test StateManager.mark_subnet_collected writes correct DynamoDB item."""
 

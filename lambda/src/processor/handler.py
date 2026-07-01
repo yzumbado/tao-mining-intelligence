@@ -197,9 +197,11 @@ def handle(event: dict, context: Any) -> dict:
             _storage.get_date_path("derived/metrics", date, netuid), derived_data)
 
         # Write split profiles to DynamoDB
+        collected_at = snapshot.get("metadata", {}).get("collected_at")
         _write_split_profiles(netuid, neurons, reward_model, gini, top_3,
                               validator_landscape, date,
-                              self_mining_risk=self_mining_risk)
+                              self_mining_risk=self_mining_risk,
+                              collected_at=collected_at)
 
         # Track hotkeys
         _track_hotkeys(netuid, date, neurons, prev_snapshot)
@@ -446,7 +448,8 @@ def _build_derived_output(netuid, date, dereg_risks, competitive_density,
 
 def _write_split_profiles(netuid: int, neurons, reward_model, gini, top_3,
                           validator_landscape, date: str,
-                          self_mining_risk: Optional[dict] = None) -> None:
+                          self_mining_risk: Optional[dict] = None,
+                          collected_at: Optional[str] = None) -> None:
     """Write all 5 split profiles to DynamoDB via StateManager."""
     now = datetime.now(timezone.utc).isoformat()
 
@@ -463,15 +466,19 @@ def _write_split_profiles(netuid: int, neurons, reward_model, gini, top_3,
         "incentive": m.incentive,
     } for m in miners]
 
-    profiles = {
-        "basic": {
+    basic_profile = {
             "netuid": netuid,
             "reward_model": reward_model.value,
             "gini_coefficient": gini,
             "top_3_concentration": top_3,
             "processed_at": now,
             "last_updated": now,
-        },
+        }
+    if collected_at:
+        basic_profile["collected_at"] = collected_at
+
+    profiles = {
+        "basic": basic_profile,
         "winner": {
             "netuid": netuid,
             "top_miners": top_miners,
