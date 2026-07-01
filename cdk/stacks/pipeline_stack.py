@@ -273,30 +273,29 @@ class TaoPipelineStack(Stack):
             resources=[scheduler_role.role_arn],
         ))
 
-        # EventBridge rules DISABLED to prevent free tier overage
-        # Re-enable when ready to resume pipeline autonomous operation
-        # events.Rule(
-        #     self, "HourlyDiscovery",
-        #     rule_name="tao-hourly-discovery",
-        #     schedule=events.Schedule.rate(Duration.hours(1)),
-        #     targets=[targets.LambdaFunction(discovery_fn)],
-        # )
+        # EventBridge rules for autonomous pipeline operation
+        events.Rule(
+            self, "HourlyDiscovery",
+            rule_name="tao-hourly-discovery",
+            schedule=events.Schedule.rate(Duration.hours(1)),
+            targets=[targets.LambdaFunction(discovery_fn)],
+        )
 
-        # # Finalizer: daily schedule at 06:00 UTC (cost optimization — was per-subnet)
-        # events.Rule(
-        #     self, "DailyFinalizer",
-        #     rule_name="tao-daily-finalizer",
-        #     schedule=events.Schedule.cron(hour="6", minute="0"),
-        #     targets=[targets.LambdaFunction(finalizer_fn)],
-        # )
+        # Finalizer: daily schedule at 06:00 UTC (cost optimization — was per-subnet)
+        events.Rule(
+            self, "DailyFinalizer",
+            rule_name="tao-daily-finalizer",
+            schedule=events.Schedule.cron(hour="6", minute="0"),
+            targets=[targets.LambdaFunction(finalizer_fn)],
+        )
 
-        # # Finalizer: second run at 18:00 UTC to catch subnets that collected after 06:00
-        # events.Rule(
-        #     self, "DailyFinalizerEvening",
-        #     rule_name="tao-daily-finalizer-evening",
-        #     schedule=events.Schedule.cron(hour="18", minute="0"),
-        #     targets=[targets.LambdaFunction(finalizer_fn)],
-        # )
+        # Finalizer: second run at 18:00 UTC to catch subnets that collected after 06:00
+        events.Rule(
+            self, "DailyFinalizerEvening",
+            rule_name="tao-daily-finalizer-evening",
+            schedule=events.Schedule.cron(hour="18", minute="0"),
+            targets=[targets.LambdaFunction(finalizer_fn)],
+        )
 
         # =====================================================================
         # Researcher Lambda (Stage 2 — subnet repo analysis)
@@ -365,14 +364,13 @@ class TaoPipelineStack(Stack):
             resources=["*"],
         ))
 
-        # EventBridge rule DISABLED to prevent free tier overage
-        # Re-enable when ready to resume market data collection
-        # events.Rule(
-        #     self, "MarketObserverSchedule",
-        #     rule_name="tao-market-observer-hourly",
-        #     schedule=events.Schedule.rate(Duration.minutes(60)),
-        #     targets=[targets.LambdaFunction(market_observer_fn)],
-        # )
+        # Market Observer: hourly price + pool_tao snapshots
+        events.Rule(
+            self, "MarketObserverSchedule",
+            rule_name="tao-market-observer-hourly",
+            schedule=events.Schedule.rate(Duration.minutes(60)),
+            targets=[targets.LambdaFunction(market_observer_fn)],
+        )
 
         cloudwatch.Alarm(
             self, "MarketObserverFailingAlarm",
